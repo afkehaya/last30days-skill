@@ -6,6 +6,8 @@ import sys
 from typing import Any, Dict, List, Optional
 
 from . import http, env
+from . import lobster
+from . import corbits_urls
 
 # Fallback models when the selected model isn't accessible (e.g., org not verified for GPT-5)
 # Note: gpt-4o-mini does NOT support web_search with filters param, so exclude it
@@ -242,6 +244,7 @@ def search_reddit(
     auth_source: str = "api_key",
     account_id: Optional[str] = None,
     mock_response: Optional[Dict] = None,
+    config: Optional[Dict] = None,
     _retry: bool = False,
 ) -> Dict[str, Any]:
     """Search Reddit for relevant threads using OpenAI Responses API.
@@ -262,6 +265,35 @@ def search_reddit(
         return mock_response
 
     min_items, max_items = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
+
+    # Lobster.cash x402 payment path (via Corbits proxy)
+    if config and config.get('LOBSTER_AVAILABLE'):
+        proxy_url = corbits_urls.get_proxy_url(OPENAI_RESPONSES_URL)
+
+        # Adjust timeout based on depth
+        timeout_ms = 90000 if depth == "quick" else 120000 if depth == "default" else 180000
+
+        payload = {
+            "model": model,
+            "tools": [
+                {
+                    "type": "web_search",
+                    "filters": {
+                        "allowed_domains": ["reddit.com"]
+                    }
+                }
+            ],
+            "include": ["web_search_call.action.sources"],
+            "input": REDDIT_SEARCH_PROMPT.format(
+                topic=topic,
+                from_date=from_date,
+                to_date=to_date,
+                min_items=min_items,
+                max_items=max_items,
+            ),
+        }
+
+        return lobster.x402_fetch(proxy_url, method="POST", json_data=payload, timeout=timeout_ms)
 
     if auth_source == env.AUTH_SOURCE_CODEX:
         if not account_id:

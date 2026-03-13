@@ -6,6 +6,8 @@ import sys
 from typing import Any, Dict, List, Optional
 
 from . import http
+from . import lobster
+from . import corbits_urls
 
 
 def _log_error(msg: str):
@@ -63,6 +65,7 @@ def search_x(
     to_date: str,
     depth: str = "default",
     mock_response: Optional[Dict] = None,
+    config: Optional[Dict] = None,
 ) -> Dict[str, Any]:
     """Search X for relevant posts using xAI API with live search.
 
@@ -82,6 +85,34 @@ def search_x(
         return mock_response
 
     min_items, max_items = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
+
+    # Lobster.cash x402 payment path (via Corbits proxy)
+    if config and config.get('LOBSTER_AVAILABLE'):
+        proxy_url = corbits_urls.get_proxy_url(XAI_RESPONSES_URL)
+
+        # Adjust timeout based on depth (in milliseconds for lobster CLI)
+        timeout_ms = 90000 if depth == "quick" else 120000 if depth == "default" else 180000
+
+        payload = {
+            "model": model,
+            "tools": [
+                {"type": "x_search"}
+            ],
+            "input": [
+                {
+                    "role": "user",
+                    "content": X_SEARCH_PROMPT.format(
+                        topic=topic,
+                        from_date=from_date,
+                        to_date=to_date,
+                        min_items=min_items,
+                        max_items=max_items,
+                    ),
+                }
+            ],
+        }
+
+        return lobster.x402_fetch(proxy_url, method="POST", json_data=payload, timeout=timeout_ms)
 
     headers = {
         "Authorization": f"Bearer {api_key}",
