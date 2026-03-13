@@ -353,6 +353,7 @@ def search_handles(
                 stderr=subprocess.PIPE,
                 text=True,
                 preexec_fn=preexec,
+                env=_subprocess_env(),
             )
 
             try:
