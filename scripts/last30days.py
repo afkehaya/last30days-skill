@@ -235,7 +235,7 @@ def _search_reddit(
         if config.get("OPENAI_API_KEY"):
             try:
                 raw_response = openai_reddit.search_reddit(
-                    config["OPENAI_API_KEY"],
+                    config.get("OPENAI_API_KEY") or "",
                     selected_models["openai"],
                     topic,
                     from_date,
@@ -243,6 +243,7 @@ def _search_reddit(
                     depth=depth,
                     auth_source=config.get("OPENAI_AUTH_SOURCE", "api_key"),
                     account_id=config.get("OPENAI_CHATGPT_ACCOUNT_ID"),
+                    config=config,
                 )
             except http.HTTPError as e:
                 raw_response = {"error": str(e)}
@@ -275,13 +276,14 @@ def _search_reddit(
         if core.lower() != topic.lower():
             try:
                 retry_raw = openai_reddit.search_reddit(
-                    config["OPENAI_API_KEY"],
+                    config.get("OPENAI_API_KEY") or "",
                     selected_models["openai"],
                     core,
                     from_date, to_date,
                     depth=depth,
                     auth_source=config.get("OPENAI_AUTH_SOURCE", "api_key"),
                     account_id=config.get("OPENAI_CHATGPT_ACCOUNT_ID"),
+                    config=config,
                 )
                 retry_items = openai_reddit.parse_reddit_response(retry_raw)
                 existing_urls = {item.get("url") for item in reddit_items}
@@ -296,11 +298,12 @@ def _search_reddit(
         sub_query = openai_reddit._build_subreddit_query(topic)
         try:
             sub_raw = openai_reddit.search_reddit(
-                config["OPENAI_API_KEY"],
+                config.get("OPENAI_API_KEY") or "",
                 selected_models["openai"],
                 sub_query,
                 from_date, to_date,
                 depth=depth,
+                config=config,
             )
             sub_items = openai_reddit.parse_reddit_response(sub_raw)
             existing_urls = {item.get("url") for item in reddit_items}
@@ -382,12 +385,13 @@ def _search_x(
     # Use xAI (original behavior)
     try:
         raw_response = xai_x.search_x(
-            config["XAI_API_KEY"],
+            config.get("XAI_API_KEY") or "",
             selected_models["xai"],
             topic,
             from_date,
             to_date,
             depth=depth,
+            config=config,
         )
     except http.HTTPError as e:
         raw_response = {"error": str(e)}
@@ -1673,6 +1677,10 @@ def main():
         )
     else:
         selected_models = models.get_models(config)
+
+    # Show lobster mode status
+    if config.get('LOBSTER_AVAILABLE'):
+        print("💰 Lobster.cash wallet detected — paying via x402 through Corbits proxies", file=sys.stderr)
 
     # Determine mode string
     if sources == "all":
