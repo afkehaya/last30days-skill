@@ -4,6 +4,8 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from . import cache, http, env
+from . import lobster as lobster_mod
+from . import corbits_urls
 
 # OpenAI API
 OPENAI_MODELS_URL = "https://api.openai.com/v1/models"
@@ -54,6 +56,7 @@ def select_openai_model(
     policy: str = "auto",
     pin: Optional[str] = None,
     mock_models: Optional[List[Dict]] = None,
+    config: Optional[Dict] = None,
 ) -> str:
     """Select the best OpenAI model based on policy.
 
@@ -73,6 +76,27 @@ def select_openai_model(
     cached = cache.get_cached_model("openai")
     if cached:
         return cached
+
+    # Lobster.cash path: fetch models via Corbits proxy
+    if config and config.get('LOBSTER_AVAILABLE') and mock_models is None:
+        try:
+            proxy_url = corbits_urls.get_proxy_url(OPENAI_MODELS_URL)
+            response = lobster_mod.x402_fetch(proxy_url)
+            models_list = response.get("data", [])
+            # Filter and select (same logic as below)
+            candidates = [m for m in models_list if is_mainline_openai_model(m.get("id", ""))]
+            if candidates:
+                def sort_key(m):
+                    version = parse_version(m.get("id", "")) or (0,)
+                    created = m.get("created", 0)
+                    return (version, created)
+                candidates.sort(key=sort_key, reverse=True)
+                selected = candidates[0]["id"]
+                cache.set_cached_model("openai", selected)
+                return selected
+        except Exception:
+            pass  # Fall through to fallback
+        return OPENAI_FALLBACK_MODELS[0]
 
     # Fetch model list
     if mock_models is not None:
@@ -156,6 +180,23 @@ def get_models(
         Dict with 'openai' and 'xai' keys
     """
     result = {"openai": None, "xai": None}
+
+    # Lobster.cash: can select models without API keys
+    if config.get('LOBSTER_AVAILABLE'):
+        result["openai"] = select_openai_model(
+            api_key="",  # Not needed for lobster path
+            policy=config.get("OPENAI_MODEL_POLICY", "auto"),
+            pin=config.get("OPENAI_MODEL_PIN"),
+            mock_models=mock_openai_models,
+            config=config,
+        )
+        result["xai"] = select_xai_model(
+            api_key="",  # Not needed for lobster path
+            policy=config.get("XAI_MODEL_POLICY", "latest"),
+            pin=config.get("XAI_MODEL_PIN"),
+            mock_models=mock_xai_models,
+        )
+        return result
 
     if config.get("OPENAI_API_KEY"):
         if config.get("OPENAI_AUTH_SOURCE") == env.AUTH_SOURCE_CODEX:
