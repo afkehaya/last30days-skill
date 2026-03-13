@@ -106,10 +106,21 @@ def x402_fetch(
         raise HTTPError(f"lobster x402 fetch failed: {stderr}")
 
     try:
-        return json.loads(result.stdout)
+        envelope = json.loads(result.stdout)
     except json.JSONDecodeError as e:
         log(f"lobster x402 fetch JSON decode error: {e}")
         raise HTTPError(f"Invalid JSON from lobster x402 fetch: {e}")
+
+    # lobster x402 fetch returns an envelope: {agentId, url, status, contentType, body, paymentSucceeded}
+    # The actual API response is a JSON string inside the "body" field.
+    if "body" in envelope and isinstance(envelope.get("body"), str):
+        log(f"lobster x402 response: status={envelope.get('status')} paid={envelope.get('paymentSucceeded')}")
+        try:
+            return json.loads(envelope["body"])
+        except json.JSONDecodeError:
+            # body might not be JSON (e.g. plain text response)
+            return envelope
+    return envelope
 
 
 def get_setup_instructions() -> str:
