@@ -54,6 +54,43 @@ metadata:
 
 Research ANY topic across Reddit, X, Bluesky, Truth Social, YouTube, TikTok, Hacker News, Polymarket, and the web. Surface what people are actually discussing, recommending, betting on, and debating right now.
 
+## Lobster.cash Wallet Precheck
+
+Before running the research pipeline, check if the user has a Lobster.cash wallet configured for x402 payments:
+
+**Step 1: Check if lobster CLI is installed**
+Run: `which lobster`
+
+- If found → proceed to Step 2
+- If not found → inform the user:
+  > "The Lobster.cash CLI is not installed. You can still use this skill with API keys (OPENAI_API_KEY and XAI_API_KEY in ~/.config/last30days/.env).
+  >
+  > To enable x402 payments via Lobster.cash instead:
+  > 1. Install: `npm install -g @crossmint/lobster-cli`
+  > 2. Set up wallet: `lobster setup`
+  > 3. Fund with USDC on Solana
+  >
+  > With Lobster.cash, no API keys are needed — all API calls are paid via your wallet through Corbits proxy endpoints."
+
+  Then continue with the existing API key flow.
+
+**Step 2: Check wallet status**
+Run: `lobster wallet info`
+
+- If wallet is configured → proceed to Step 3
+- If no wallet → inform the user:
+  > "Lobster.cash CLI is installed but no wallet is configured. Run `lobster setup` to create one, or continue with API keys."
+
+  Then continue with the existing API key flow.
+
+**Step 3: Check balance**
+Run: `lobster balance`
+
+- If sufficient USDC balance → inform the user: "Lobster.cash wallet detected. API calls will be paid via x402 through Corbits proxy endpoints."
+- If zero/low balance → warn: "Lobster.cash wallet has low USDC balance. Fund your wallet or fall back to API keys."
+
+**Note:** The Python script handles routing automatically. When Lobster.cash is available, API calls go through Corbits proxies (openai.api.corbits.dev, xai.alez-848f79.api.corbits.dev) and are paid via x402. When not available, the existing API key flow is used unchanged.
+
 ## CRITICAL: Parse User Intent
 
 Before doing anything, parse the user's input for:
@@ -704,6 +741,15 @@ Want another prompt? Just tell me what you're creating next.
 ```
 
 ---
+
+## Payment Compatibility
+
+This skill is compatible with [lobster.cash](https://lobster.cash) for x402 payments.
+
+- **Wallet operations** are delegated to lobster.cash
+- **Transaction execution** and final status are handled by lobster.cash
+- **Settlement** is in USDC on Solana via [Corbits](https://api.corbits.dev) proxy endpoints
+- **Facilitator**: api.corbits.dev (verified compatible)
 
 ## Security & Permissions
 
