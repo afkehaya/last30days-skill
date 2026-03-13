@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict, Any, Literal
 
+from . import lobster
+
 # Allow override via environment variable for testing
 # Set LAST30DAYS_CONFIG_DIR="" for clean/no-config mode
 # Set LAST30DAYS_CONFIG_DIR="/path/to/dir" for custom config location
@@ -263,6 +265,9 @@ def get_config() -> Dict[str, Any]:
     for key, default in keys:
         config[key] = os.environ.get(key) or merged_env.get(key, default)
 
+    # Lobster.cash wallet detection
+    config['LOBSTER_AVAILABLE'] = lobster.is_installed() and lobster.is_wallet_configured()
+
     # Track which config source was used
     if project_env_path:
         config['_CONFIG_SOURCE'] = f'project:{project_env_path}'
@@ -312,6 +317,10 @@ def get_available_sources(config: Dict[str, Any]) -> str:
 
     Returns: 'all', 'both', 'reddit', 'reddit-web', 'x', 'x-web', 'web', or 'none'
     """
+    # Lobster.cash provides access to all sources without API keys
+    if config.get('LOBSTER_AVAILABLE'):
+        return 'both'
+
     # Reddit is available via public JSON fallback even without OpenAI auth.
     has_reddit = True
     has_xai = bool(config.get('XAI_API_KEY'))
@@ -350,6 +359,10 @@ def get_missing_keys(config: Dict[str, Any]) -> str:
 
     Returns: 'all', 'both', 'reddit', 'x', 'web', or 'none'
     """
+    # Lobster.cash wallet provides access without API keys
+    if config.get('LOBSTER_AVAILABLE'):
+        return 'none'
+
     has_reddit = True
     has_xai = bool(config.get('XAI_API_KEY'))
     has_web = has_web_search_keys(config)
