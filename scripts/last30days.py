@@ -205,7 +205,7 @@ def _search_reddit(
             sys.stderr.flush()
             result = reddit.search_and_enrich(
                 topic, from_date, to_date,
-                depth=depth, token=sc_token,
+                depth=depth, token=sc_token, config=config,
             )
             reddit_items = result.get("items", [])
             if result.get("error"):
@@ -370,6 +370,7 @@ def _search_x(
                 topic, from_date, to_date,
                 depth=depth,
                 token=config.get("SCRAPECREATORS_API_KEY"),
+                config=config,
             )
         except Exception as e:
             raw_response = {"error": str(e)}
@@ -439,6 +440,7 @@ def _search_tiktok(
     to_date: str,
     depth: str,
     token: str,
+    config: dict = None,
 ) -> tuple:
     """Search TikTok via ScrapeCreators (runs in thread).
 
@@ -449,7 +451,7 @@ def _search_tiktok(
 
     try:
         response = tiktok.search_and_enrich(
-            topic, from_date, to_date, depth=depth, token=token,
+            topic, from_date, to_date, depth=depth, token=token, config=config,
         )
     except Exception as e:
         return [], f"{type(e).__name__}: {e}"
@@ -468,6 +470,7 @@ def _search_instagram(
     to_date: str,
     depth: str,
     token: str,
+    config: dict = None,
 ) -> tuple:
     """Search Instagram via ScrapeCreators (runs in thread).
 
@@ -478,7 +481,7 @@ def _search_instagram(
 
     try:
         response = instagram.search_and_enrich(
-            topic, from_date, to_date, depth=depth, token=token,
+            topic, from_date, to_date, depth=depth, token=token, config=config,
         )
     except Exception as e:
         return [], f"{type(e).__name__}: {e}"
@@ -633,14 +636,17 @@ def _search_web(
         if backend == "parallel":
             raw_results = parallel_search.search_web(
                 topic, from_date, to_date, config["PARALLEL_API_KEY"], depth=depth,
+                config=config,
             )
         elif backend == "brave":
             raw_results = brave_search.search_web(
                 topic, from_date, to_date, config["BRAVE_API_KEY"], depth=depth,
+                config=config,
             )
         elif backend == "openrouter":
             raw_results = openrouter_search.search_web(
                 topic, from_date, to_date, config["OPENROUTER_API_KEY"], depth=depth,
+                config=config,
             )
     except Exception as e:
         return [], f"{type(e).__name__}: {e}"
@@ -991,7 +997,7 @@ def run_research(
             if progress:
                 progress.start_tiktok()
             try:
-                tiktok_items, tiktok_error = _search_tiktok(topic, from_date, to_date, depth, env.get_tiktok_token(config))
+                tiktok_items, tiktok_error = _search_tiktok(topic, from_date, to_date, depth, env.get_tiktok_token(config), config=config)
                 if tiktok_error and progress:
                     progress.show_error(f"TikTok error: {tiktok_error}")
             except Exception as e:
@@ -1005,7 +1011,7 @@ def run_research(
                 progress.start_instagram()
             try:
                 ig_timeout = timeouts.get("instagram_future", future_timeout)
-                instagram_items, instagram_error = _search_instagram(topic, from_date, to_date, depth, env.get_instagram_token(config))
+                instagram_items, instagram_error = _search_instagram(topic, from_date, to_date, depth, env.get_instagram_token(config), config=config)
                 if instagram_error and progress:
                     progress.show_error(f"Instagram error: {instagram_error}")
             except Exception as e:

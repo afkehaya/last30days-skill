@@ -16,13 +16,14 @@ import sys
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
+from urllib.parse import urlencode as _urlencode
 
 try:
     import requests as _requests
 except ImportError:
     _requests = None
 
-from . import http
+from . import http, lobster, corbits_urls
 
 SCRAPECREATORS_BASE = "https://api.scrapecreators.com/v1/reddit"
 
@@ -75,6 +76,21 @@ def _sc_headers(token: str) -> Dict[str, str]:
         "x-api-key": token,
         "Content-Type": "application/json",
     }
+
+
+def _sc_get(url: str, params: dict, headers: dict, config: dict = None, timeout: int = 30) -> dict:
+    """Fetch from ScrapeCreators, routing through Lobster x402 proxy when available.
+
+    Returns parsed JSON in both paths.
+    """
+    if config and config.get('LOBSTER_AVAILABLE'):
+        full_url = f"{url}?{_urlencode(params)}" if params else url
+        proxy_url = corbits_urls.get_proxy_url(full_url)
+        return lobster.x402_fetch(proxy_url, method="GET", timeout=timeout * 1000)
+    else:
+        resp = _requests.get(url, params=params, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
 
 
 def _extract_core_subject(topic: str) -> str:
@@ -231,6 +247,7 @@ def _global_search(
     token: str,
     sort: str = "relevance",
     timeframe: str = "month",
+    config: dict = None,
 ) -> List[Dict[str, Any]]:
     """Search across all of Reddit via ScrapeCreators global search.
 
@@ -239,17 +256,29 @@ def _global_search(
         token: ScrapeCreators API key
         sort: Sort order (relevance, hot, top, new)
         timeframe: Time filter (hour, day, week, month, year, all)
+        config: Optional config dict (for Lobster x402 routing)
 
     Returns:
         List of post dicts
     """
+    params = {"query": query, "sort": sort, "timeframe": timeframe}
+
+    # Lobster x402 path or requests path via _sc_get helper
+    if config and config.get('LOBSTER_AVAILABLE'):
+        try:
+            data = _sc_get(f"{SCRAPECREATORS_BASE}/search", params, {}, config=config)
+            return data.get("posts", data.get("data", []))
+        except Exception as e:
+            _log(f"Global search error (lobster): {e}")
+            return []
+
     if not _requests:
         _log("requests library not installed, falling back to urllib")
         # Use stdlib http module as fallback
         try:
             from urllib.parse import urlencode
-            params = urlencode({"query": query, "sort": sort, "timeframe": timeframe})
-            url = f"{SCRAPECREATORS_BASE}/search?{params}"
+            qs = urlencode(params)
+            url = f"{SCRAPECREATORS_BASE}/search?{qs}"
             headers = _sc_headers(token)
             headers["User-Agent"] = http.USER_AGENT
             data = http.get(url, headers=headers, timeout=30, retries=2)
@@ -259,14 +288,7 @@ def _global_search(
             return []
 
     try:
-        resp = _requests.get(
-            f"{SCRAPECREATORS_BASE}/search",
-            params={"query": query, "sort": sort, "timeframe": timeframe},
-            headers=_sc_headers(token),
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = _sc_get(f"{SCRAPECREATORS_BASE}/search", params, _sc_headers(token))
         return data.get("posts", data.get("data", []))
     except Exception as e:
         _log(f"Global search error: {e}")
@@ -279,6 +301,7 @@ def _subreddit_search(
     token: str,
     sort: str = "relevance",
     timeframe: str = "month",
+    config: dict = None,
 ) -> List[Dict[str, Any]]:
     """Search within a specific subreddit via ScrapeCreators.
 
@@ -288,18 +311,29 @@ def _subreddit_search(
         token: ScrapeCreators API key
         sort: Sort order
         timeframe: Time filter
+        config: Optional config dict (for Lobster x402 routing)
 
     Returns:
         List of post dicts
     """
+    params = {
+        "subreddit": subreddit, "query": query,
+        "sort": sort, "timeframe": timeframe,
+    }
+
+    if config and config.get('LOBSTER_AVAILABLE'):
+        try:
+            data = _sc_get(f"{SCRAPECREATORS_BASE}/subreddit/search", params, {}, config=config)
+            return data.get("posts", data.get("data", []))
+        except Exception as e:
+            _log(f"Subreddit search error (lobster) for r/{subreddit}: {e}")
+            return []
+
     if not _requests:
         try:
             from urllib.parse import urlencode
-            params = urlencode({
-                "subreddit": subreddit, "query": query,
-                "sort": sort, "timeframe": timeframe,
-            })
-            url = f"{SCRAPECREATORS_BASE}/subreddit/search?{params}"
+            qs = urlencode(params)
+            url = f"{SCRAPECREATORS_BASE}/subreddit/search?{qs}"
             headers = _sc_headers(token)
             headers["User-Agent"] = http.USER_AGENT
             data = http.get(url, headers=headers, timeout=30, retries=2)
@@ -309,19 +343,7 @@ def _subreddit_search(
             return []
 
     try:
-        resp = _requests.get(
-            f"{SCRAPECREATORS_BASE}/subreddit/search",
-            params={
-                "subreddit": subreddit,
-                "query": query,
-                "sort": sort,
-                "timeframe": timeframe,
-            },
-            headers=_sc_headers(token),
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = _sc_get(f"{SCRAPECREATORS_BASE}/subreddit/search", params, _sc_headers(token))
         return data.get("posts", data.get("data", []))
     except Exception as e:
         _log(f"Subreddit search error for r/{subreddit}: {e}")
@@ -331,21 +353,33 @@ def _subreddit_search(
 def fetch_post_comments(
     url: str,
     token: str,
+    config: dict = None,
 ) -> List[Dict[str, Any]]:
     """Fetch comments for a Reddit post via ScrapeCreators.
 
     Args:
         url: Reddit post URL or permalink
         token: ScrapeCreators API key
+        config: Optional config dict (for Lobster x402 routing)
 
     Returns:
         List of comment dicts with score, author, body, etc.
     """
+    params = {"url": url}
+
+    if config and config.get('LOBSTER_AVAILABLE'):
+        try:
+            data = _sc_get(f"{SCRAPECREATORS_BASE}/post/comments", params, {}, config=config)
+            return data.get("comments", data.get("data", []))
+        except Exception as e:
+            _log(f"Comment fetch error (lobster): {e}")
+            return []
+
     if not _requests:
         try:
             from urllib.parse import urlencode
-            params = urlencode({"url": url})
-            api_url = f"{SCRAPECREATORS_BASE}/post/comments?{params}"
+            qs = urlencode(params)
+            api_url = f"{SCRAPECREATORS_BASE}/post/comments?{qs}"
             headers = _sc_headers(token)
             headers["User-Agent"] = http.USER_AGENT
             data = http.get(api_url, headers=headers, timeout=30, retries=2)
@@ -355,14 +389,7 @@ def fetch_post_comments(
             return []
 
     try:
-        resp = _requests.get(
-            f"{SCRAPECREATORS_BASE}/post/comments",
-            params={"url": url},
-            headers=_sc_headers(token),
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = _sc_get(f"{SCRAPECREATORS_BASE}/post/comments", params, _sc_headers(token))
         return data.get("comments", data.get("data", []))
     except Exception as e:
         _log(f"Comment fetch error: {e}")
@@ -395,6 +422,7 @@ def search_reddit(
     to_date: str,
     depth: str = "default",
     token: str = None,
+    config: dict = None,
 ) -> Dict[str, Any]:
     """Full Reddit search: multi-query global discovery + subreddit drill-down.
 
@@ -410,11 +438,11 @@ def search_reddit(
     Returns:
         Dict with 'items' list and optional 'error'.
     """
-    if not token:
+    if not token and not (config and config.get('LOBSTER_AVAILABLE')):
         return {"items": [], "error": "No SCRAPECREATORS_API_KEY configured"}
 
-    config = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
-    timeframe = config["timeframe"]
+    depth_config = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
+    timeframe = depth_config["timeframe"]
 
     # === Phase 1: Query Expansion ===
     queries = expand_reddit_queries(topic, depth)
@@ -422,12 +450,12 @@ def search_reddit(
 
     # === Phase 2: Global Discovery ===
     all_raw_posts = []
-    max_global = config["global_searches"]
+    max_global = depth_config["global_searches"]
 
     for i, query in enumerate(queries[:max_global]):
         sort = "relevance" if i == 0 else "top"
         _log(f"Global search {i+1}/{max_global}: '{query}' (sort={sort})")
-        posts = _global_search(query, token, sort=sort, timeframe=timeframe)
+        posts = _global_search(query, token, sort=sort, timeframe=timeframe, config=config)
         _log(f"  -> {len(posts)} results")
         all_raw_posts.extend(posts)
 
@@ -438,13 +466,13 @@ def search_reddit(
         all_items.append(item)
 
     # === Phase 3: Subreddit Discovery + Targeted Search ===
-    discovered_subs = discover_subreddits(all_raw_posts, topic=topic, max_subs=config["subreddit_searches"])
+    discovered_subs = discover_subreddits(all_raw_posts, topic=topic, max_subs=depth_config["subreddit_searches"])
     _log(f"Discovered subreddits: {discovered_subs}")
 
     core = _extract_core_subject(topic)
-    for sub in discovered_subs[:config["subreddit_searches"]]:
+    for sub in discovered_subs[:depth_config["subreddit_searches"]]:
         _log(f"Subreddit search: r/{sub} for '{core}'")
-        sub_posts = _subreddit_search(sub, core, token, sort="relevance", timeframe=timeframe)
+        sub_posts = _subreddit_search(sub, core, token, sort="relevance", timeframe=timeframe, config=config)
         _log(f"  -> {len(sub_posts)} results from r/{sub}")
         for j, post in enumerate(sub_posts):
             item = _normalize_post(post, len(all_items) + j + 1, f"r/{sub}")
@@ -490,6 +518,7 @@ def enrich_with_comments(
     items: List[Dict[str, Any]],
     token: str,
     depth: str = "default",
+    config: dict = None,
 ) -> List[Dict[str, Any]]:
     """Enrich top items with comment data from ScrapeCreators.
 
@@ -515,7 +544,7 @@ def enrich_with_comments(
         if not url:
             continue
 
-        raw_comments = fetch_post_comments(url, token)
+        raw_comments = fetch_post_comments(url, token, config=config)
         if not raw_comments:
             continue
 
@@ -570,6 +599,7 @@ def search_and_enrich(
     to_date: str,
     depth: str = "default",
     token: str = None,
+    config: dict = None,
 ) -> Dict[str, Any]:
     """Full Reddit pipeline: search + comment enrichment.
 
@@ -581,15 +611,16 @@ def search_and_enrich(
         to_date: End date (YYYY-MM-DD)
         depth: 'quick', 'default', or 'deep'
         token: ScrapeCreators API key
+        config: Optional config dict (for Lobster x402 routing)
 
     Returns:
         Dict with 'items' list. Items include top_comments and comment_insights.
     """
-    result = search_reddit(topic, from_date, to_date, depth, token)
+    result = search_reddit(topic, from_date, to_date, depth, token, config=config)
     items = result.get("items", [])
 
-    if items and token:
-        items = enrich_with_comments(items, token, depth)
+    if items and (token or (config and config.get('LOBSTER_AVAILABLE'))):
+        items = enrich_with_comments(items, token, depth, config=config)
         result["items"] = items
 
     return result

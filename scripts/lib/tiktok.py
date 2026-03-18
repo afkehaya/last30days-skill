@@ -11,11 +11,14 @@ import re
 import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
+from urllib.parse import urlencode as _urlencode
 
 try:
     import requests as _requests
 except ImportError:
     _requests = None
+
+from . import lobster, corbits_urls
 
 SCRAPECREATORS_BASE = "https://api.scrapecreators.com/v1/tiktok"
 
@@ -146,6 +149,21 @@ def _sc_headers(token: str) -> Dict[str, str]:
     }
 
 
+def _sc_get(url: str, params: dict, headers: dict, config: dict = None, timeout: int = 30) -> dict:
+    """Fetch from ScrapeCreators, routing through Lobster x402 proxy when available.
+
+    Returns parsed JSON in both paths.
+    """
+    if config and config.get('LOBSTER_AVAILABLE'):
+        full_url = f"{url}?{_urlencode(params)}" if params else url
+        proxy_url = corbits_urls.get_proxy_url(full_url)
+        return lobster.x402_fetch(proxy_url, method="GET", timeout=timeout * 1000)
+    else:
+        resp = _requests.get(url, params=params, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+
+
 def _parse_date(item: Dict[str, Any]) -> Optional[str]:
     """Parse date from ScrapeCreators TikTok item to YYYY-MM-DD.
 
@@ -188,6 +206,7 @@ def search_tiktok(
     to_date: str,
     depth: str = "default",
     token: str = None,
+    config: dict = None,
 ) -> Dict[str, Any]:
     """Search TikTok via ScrapeCreators API.
 
@@ -201,26 +220,22 @@ def search_tiktok(
     Returns:
         Dict with 'items' list and optional 'error'.
     """
-    if not token:
+    if not token and not (config and config.get('LOBSTER_AVAILABLE')):
         return {"items": [], "error": "No SCRAPECREATORS_API_KEY configured"}
 
-    if not _requests:
-        return {"items": [], "error": "requests library not installed"}
-
-    config = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
+    depth_config = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
     core_topic = _extract_core_subject(topic)
 
-    _log(f"Searching TikTok for '{core_topic}' (depth={depth}, count={config['results_per_page']})")
+    _log(f"Searching TikTok for '{core_topic}' (depth={depth}, count={depth_config['results_per_page']})")
 
     try:
-        resp = _requests.get(
+        data = _sc_get(
             f"{SCRAPECREATORS_BASE}/search/keyword",
-            params={"query": core_topic, "sort_by": "relevance"},
-            headers=_sc_headers(token),
+            {"query": core_topic, "sort_by": "relevance"},
+            _sc_headers(token) if token else {},
+            config=config,
             timeout=30,
         )
-        resp.raise_for_status()
-        data = resp.json()
     except Exception as e:
         _log(f"ScrapeCreators error: {e}")
         return {"items": [], "error": f"{type(e).__name__}: {e}"}
@@ -234,7 +249,7 @@ def search_tiktok(
             raw_items.append(info)
 
     # Limit to configured count
-    raw_items = raw_items[:config["results_per_page"]]
+    raw_items = raw_items[:depth_config["results_per_page"]]
 
     # Parse items
     items = []
@@ -304,6 +319,7 @@ def fetch_captions(
     video_items: List[Dict[str, Any]],
     token: str,
     depth: str = "default",
+    config: dict = None,
 ) -> Dict[str, str]:
     """Fetch transcripts for top N TikTok videos via ScrapeCreators.
 
@@ -315,14 +331,17 @@ def fetch_captions(
         video_items: Items from search_tiktok()
         token: ScrapeCreators API key
         depth: Depth level for caption limit
+        config: Optional config dict (for Lobster x402 routing)
 
     Returns:
         Dict mapping video_id -> caption text (truncated to 500 words)
     """
-    config = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
-    max_captions = config["max_captions"]
+    depth_config = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
+    max_captions = depth_config["max_captions"]
 
-    if not video_items or not token or not _requests:
+    if not video_items or not (token or (config and config.get('LOBSTER_AVAILABLE'))):
+        return {}
+    if not _requests and not (config and config.get('LOBSTER_AVAILABLE')):
         return {}
 
     top_items = video_items[:max_captions]
@@ -347,24 +366,23 @@ def fetch_captions(
         if not url:
             continue
         try:
-            resp = _requests.get(
+            data = _sc_get(
                 f"{SCRAPECREATORS_BASE}/video/transcript",
-                params={"url": url},
-                headers=_sc_headers(token),
+                {"url": url},
+                _sc_headers(token) if token else {},
+                config=config,
                 timeout=15,
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                transcript = data.get("transcript")
+            transcript = data.get("transcript")
+            if transcript:
+                if isinstance(transcript, list):
+                    transcript = " ".join(str(s) for s in transcript)
+                transcript = _clean_webvtt(transcript)
                 if transcript:
-                    if isinstance(transcript, list):
-                        transcript = " ".join(str(s) for s in transcript)
-                    transcript = _clean_webvtt(transcript)
-                    if transcript:
-                        words = transcript.split()
-                        if len(words) > CAPTION_MAX_WORDS:
-                            transcript = ' '.join(words[:CAPTION_MAX_WORDS]) + '...'
-                        captions[vid] = transcript
+                    words = transcript.split()
+                    if len(words) > CAPTION_MAX_WORDS:
+                        transcript = ' '.join(words[:CAPTION_MAX_WORDS]) + '...'
+                    captions[vid] = transcript
         except Exception as e:
             _log(f"Transcript fetch failed for {vid}: {e}")
 
@@ -379,6 +397,7 @@ def search_and_enrich(
     to_date: str,
     depth: str = "default",
     token: str = None,
+    config: dict = None,
 ) -> Dict[str, Any]:
     """Full TikTok search: find videos, then fetch captions for top results.
 
@@ -388,19 +407,20 @@ def search_and_enrich(
         to_date: End date (YYYY-MM-DD)
         depth: 'quick', 'default', or 'deep'
         token: ScrapeCreators API key
+        config: Optional config dict (for Lobster x402 routing)
 
     Returns:
         Dict with 'items' list. Each item has a 'caption_snippet' field.
     """
     # Step 1: Search
-    search_result = search_tiktok(topic, from_date, to_date, depth, token)
+    search_result = search_tiktok(topic, from_date, to_date, depth, token, config=config)
     items = search_result.get("items", [])
 
     if not items:
         return search_result
 
     # Step 2: Fetch captions for top N
-    captions = fetch_captions(items, token, depth)
+    captions = fetch_captions(items, token, depth, config=config)
 
     # Step 3: Attach captions to items
     for item in items:

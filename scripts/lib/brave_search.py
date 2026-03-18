@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode, urlparse
 
-from . import http
+from . import http, lobster, corbits_urls
 
 ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 
@@ -33,6 +33,7 @@ def search_web(
     to_date: str,
     api_key: str,
     depth: str = "default",
+    config: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Search the web via Brave Search API.
 
@@ -70,6 +71,11 @@ def search_web(
 
     sys.stderr.write(f"[Web] Searching Brave for: {topic}\n")
     sys.stderr.flush()
+
+    # Lobster.cash x402 payment path (via Corbits proxy)
+    if config and config.get('LOBSTER_AVAILABLE'):
+        proxy_url = corbits_urls.get_proxy_url(url)
+        return lobster.x402_fetch(proxy_url, method="GET", timeout=15000)
 
     response = http.request(
         "GET",

@@ -12,7 +12,7 @@ import sys
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from . import http
+from . import http, lobster, corbits_urls
 
 ENDPOINT = "https://api.parallel.ai/v1beta/search"
 
@@ -29,6 +29,7 @@ def search_web(
     to_date: str,
     api_key: str,
     depth: str = "default",
+    config: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Search the web via Parallel AI Search API.
 
@@ -59,6 +60,12 @@ def search_web(
 
     sys.stderr.write(f"[Web] Searching Parallel AI for: {topic}\n")
     sys.stderr.flush()
+
+    # Lobster.cash x402 payment path (via Corbits proxy)
+    if config and config.get('LOBSTER_AVAILABLE'):
+        proxy_url = corbits_urls.get_proxy_url(ENDPOINT)
+        timeout_ms = 30000 if depth == "quick" else 30000 if depth == "default" else 60000
+        return lobster.x402_fetch(proxy_url, method="POST", json_data=payload, timeout=timeout_ms)
 
     response = http.post(
         ENDPOINT,

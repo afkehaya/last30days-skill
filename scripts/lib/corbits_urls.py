@@ -7,6 +7,10 @@ from typing import Optional
 PROXY_MAP = {
     "https://api.openai.com": "https://openai.api.corbits.dev",
     "https://api.x.ai": "https://xai.alez-848f79.api.corbits.dev",
+    "https://openrouter.ai": "https://openrouter.abklabs.api.corbits.dev",
+    "https://api.parallel.ai": "https://parallelai.abklabs.api.corbits.dev",
+    "https://api.scrapecreators.com": "https://scrapecreators.abklabs.api.corbits.dev",
+    "https://api.search.brave.com": "https://brave.abklabs.api.corbits.dev",
 }
 
 

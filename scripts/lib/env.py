@@ -319,7 +319,7 @@ def get_available_sources(config: Dict[str, Any]) -> str:
     """
     # Lobster.cash provides access to all sources without API keys
     if config.get('LOBSTER_AVAILABLE'):
-        return 'both'
+        return 'all'
 
     # Reddit is available via public JSON fallback even without OpenAI auth.
     has_reddit = True
@@ -335,6 +335,8 @@ def get_available_sources(config: Dict[str, Any]) -> str:
 
 def has_web_search_keys(config: Dict[str, Any]) -> bool:
     """Check if any web search API keys are configured."""
+    if config.get('LOBSTER_AVAILABLE'):
+        return True
     return bool(config.get('OPENROUTER_API_KEY') or config.get('PARALLEL_API_KEY') or config.get('BRAVE_API_KEY'))
 
 
@@ -345,6 +347,8 @@ def get_web_search_source(config: Dict[str, Any]) -> Optional[str]:
 
     Returns: 'parallel', 'brave', 'openrouter', or None
     """
+    if config.get('LOBSTER_AVAILABLE'):
+        return 'parallel'
     if config.get('PARALLEL_API_KEY'):
         return 'parallel'
     if config.get('BRAVE_API_KEY'):

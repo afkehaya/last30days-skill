@@ -11,11 +11,14 @@ import re
 import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
+from urllib.parse import urlencode
 
 try:
     import requests as _requests
 except ImportError:
     _requests = None
+
+from . import lobster, corbits_urls
 
 SCRAPECREATORS_BASE = "https://api.scrapecreators.com/v1/twitter"
 
@@ -140,38 +143,45 @@ def search_x(
     to_date: str,
     depth: str = "default",
     token: str = None,
+    config: dict = None,
 ) -> Dict[str, Any]:
     """Search X/Twitter via ScrapeCreators API.
 
     Returns:
         Dict with 'items' list (in normalize_x_items format) and optional 'error'.
     """
-    if not token:
+    if not token and not (config and config.get('LOBSTER_AVAILABLE')):
         return {"items": [], "error": "No SCRAPECREATORS_API_KEY configured"}
 
-    if not _requests:
-        return {"items": [], "error": "requests library not installed"}
-
-    config = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
+    depth_config = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
     core_topic = _extract_core_subject(topic)
 
-    _log(f"Searching X for '{core_topic}' (depth={depth}, count={config['results_per_page']})")
+    _log(f"Searching X for '{core_topic}' (depth={depth}, count={depth_config['results_per_page']})")
 
     try:
-        resp = _requests.get(
-            f"{SCRAPECREATORS_BASE}/search/tweets",
-            params={"query": core_topic, "sort_by": "relevance"},
-            headers=_sc_headers(token),
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        # Lobster x402 payment path (via Corbits proxy)
+        if config and config.get('LOBSTER_AVAILABLE'):
+            params = urlencode({"query": core_topic, "sort_by": "relevance"})
+            full_url = f"{SCRAPECREATORS_BASE}/search/tweets?{params}"
+            proxy_url = corbits_urls.get_proxy_url(full_url)
+            data = lobster.x402_fetch(proxy_url, method="GET", timeout=30000)
+        else:
+            if not _requests:
+                return {"items": [], "error": "requests library not installed"}
+            resp = _requests.get(
+                f"{SCRAPECREATORS_BASE}/search/tweets",
+                params={"query": core_topic, "sort_by": "relevance"},
+                headers=_sc_headers(token),
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
     except Exception as e:
         _log(f"ScrapeCreators error: {e}")
         return {"items": [], "error": f"{type(e).__name__}: {e}"}
 
     raw_items = data.get("tweets") or data.get("data") or data.get("results") or []
-    raw_items = raw_items[:config["results_per_page"]]
+    raw_items = raw_items[:depth_config["results_per_page"]]
 
     items = []
     for i, raw in enumerate(raw_items):
