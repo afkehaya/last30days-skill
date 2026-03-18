@@ -65,7 +65,8 @@ def search_web(
     if config and config.get('LOBSTER_AVAILABLE'):
         proxy_url = corbits_urls.get_proxy_url(ENDPOINT)
         timeout_ms = 30000 if depth == "quick" else 30000 if depth == "default" else 60000
-        return lobster.x402_fetch(proxy_url, method="POST", json_data=payload, timeout=timeout_ms)
+        raw = lobster.x402_fetch(proxy_url, method="POST", json_data=payload, timeout=timeout_ms)
+        return _normalize_results(raw) if isinstance(raw, dict) else raw
 
     response = http.post(
         ENDPOINT,

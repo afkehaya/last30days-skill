@@ -86,7 +86,29 @@ def _sc_get(url: str, params: dict, headers: dict, config: dict = None, timeout:
     if config and config.get('LOBSTER_AVAILABLE'):
         full_url = f"{url}?{_urlencode(params)}" if params else url
         proxy_url = corbits_urls.get_proxy_url(full_url)
-        return lobster.x402_fetch(proxy_url, method="GET", timeout=timeout * 1000)
+        data = lobster.x402_fetch(proxy_url, method="GET", timeout=timeout * 1000)
+        # Validate response shape — x402 envelope may return unexpected structure
+        if not isinstance(data, dict):
+            _log(f"Lobster x402 returned non-dict: {type(data).__name__}")
+            return {"posts": [], "data": []}
+        # If the response is an x402 envelope that wasn't unwrapped (has 'body' key
+        # but no 'posts'/'data'), try to extract the body
+        if "body" in data and "posts" not in data and "data" not in data:
+            body = data["body"]
+            if isinstance(body, dict):
+                _log(f"Unwrapping x402 envelope body (keys: {list(body.keys())[:5]})")
+                return body
+            if isinstance(body, str):
+                try:
+                    parsed = __import__("json").loads(body)
+                    if isinstance(parsed, dict):
+                        _log(f"Parsed x402 envelope body string (keys: {list(parsed.keys())[:5]})")
+                        return parsed
+                except (ValueError, TypeError):
+                    pass
+            _log(f"x402 envelope body unusable: type={type(body).__name__}, keys={list(data.keys())}")
+            return {"posts": [], "data": []}
+        return data
     else:
         resp = _requests.get(url, params=params, headers=headers, timeout=timeout)
         resp.raise_for_status()
@@ -526,14 +548,15 @@ def enrich_with_comments(
         items: Reddit items from search_reddit()
         token: ScrapeCreators API key
         depth: Depth for comment limit
+        config: Runtime config dict (contains LOBSTER_AVAILABLE, etc.)
 
     Returns:
         Items with top_comments and comment_insights added.
     """
-    config = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
-    max_comments = config["comment_enrichments"]
+    depth_cfg = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
+    max_comments = depth_cfg["comment_enrichments"]
 
-    if not items or not token:
+    if not items or (not token and not (config and config.get('LOBSTER_AVAILABLE'))):
         return items
 
     top_items = items[:max_comments]

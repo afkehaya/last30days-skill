@@ -1083,7 +1083,7 @@ def run_research(
                 progress.start_tiktok()
             tiktok_future = executor.submit(
                 _search_tiktok, topic, from_date, to_date, depth,
-                env.get_tiktok_token(config),
+                env.get_tiktok_token(config), config,
             )
 
         if run_instagram:
@@ -1091,7 +1091,7 @@ def run_research(
                 progress.start_instagram()
             instagram_future = executor.submit(
                 _search_instagram, topic, from_date, to_date, depth,
-                env.get_instagram_token(config),
+                env.get_instagram_token(config), config,
             )
 
         if run_xiaohongshu:

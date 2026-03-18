@@ -75,7 +75,8 @@ def search_web(
     # Lobster.cash x402 payment path (via Corbits proxy)
     if config and config.get('LOBSTER_AVAILABLE'):
         proxy_url = corbits_urls.get_proxy_url(url)
-        return lobster.x402_fetch(proxy_url, method="GET", timeout=15000)
+        raw = lobster.x402_fetch(proxy_url, method="GET", timeout=15000)
+        return _normalize_results(raw, from_date, to_date) if isinstance(raw, dict) else raw
 
     response = http.request(
         "GET",

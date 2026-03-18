@@ -529,11 +529,11 @@ def is_polymarket_available() -> bool:
 
 
 def is_tiktok_available(config: Dict[str, Any]) -> bool:
-    """Check if TikTok source is available (ScrapeCreators or legacy Apify).
+    """Check if TikTok source is available (ScrapeCreators, legacy Apify, or Lobster x402).
 
-    Returns True if SCRAPECREATORS_API_KEY or APIFY_API_TOKEN is set.
+    Returns True if SCRAPECREATORS_API_KEY, APIFY_API_TOKEN, or LOBSTER_AVAILABLE is set.
     """
-    return bool(config.get('SCRAPECREATORS_API_KEY') or config.get('APIFY_API_TOKEN'))
+    return bool(config.get('SCRAPECREATORS_API_KEY') or config.get('APIFY_API_TOKEN') or config.get('LOBSTER_AVAILABLE'))
 
 
 def get_tiktok_token(config: Dict[str, Any]) -> str:
@@ -542,12 +542,12 @@ def get_tiktok_token(config: Dict[str, Any]) -> str:
 
 
 def is_instagram_available(config: Dict[str, Any]) -> bool:
-    """Check if Instagram source is available (ScrapeCreators).
+    """Check if Instagram source is available (ScrapeCreators or Lobster x402).
 
-    Returns True if SCRAPECREATORS_API_KEY is set.
+    Returns True if SCRAPECREATORS_API_KEY or LOBSTER_AVAILABLE is set.
     Instagram uses the same key as TikTok.
     """
-    return bool(config.get('SCRAPECREATORS_API_KEY'))
+    return bool(config.get('SCRAPECREATORS_API_KEY') or config.get('LOBSTER_AVAILABLE'))
 
 
 def get_instagram_token(config: Dict[str, Any]) -> str:
