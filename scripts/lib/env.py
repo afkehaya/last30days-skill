@@ -293,6 +293,8 @@ def is_reddit_available(config: Dict[str, Any]) -> bool:
 
     Reddit can use either ScrapeCreators (preferred) or OpenAI.
     """
+    if config.get('LOBSTER_AVAILABLE'):
+        return True
     has_sc = bool(config.get('SCRAPECREATORS_API_KEY'))
     has_openai = bool(config.get('OPENAI_API_KEY')) and config.get('OPENAI_AUTH_STATUS') == AUTH_STATUS_OK
     return has_sc or has_openai
@@ -305,6 +307,8 @@ def get_reddit_source(config: Dict[str, Any]) -> Optional[str]:
 
     Returns: 'scrapecreators', 'openai', or None
     """
+    if config.get('LOBSTER_AVAILABLE'):
+        return 'scrapecreators'
     if config.get('SCRAPECREATORS_API_KEY'):
         return 'scrapecreators'
     if config.get('OPENAI_API_KEY') and config.get('OPENAI_AUTH_STATUS') == AUTH_STATUS_OK:
@@ -604,9 +608,10 @@ def get_x_source_status(config: Dict[str, Any]) -> Dict[str, Any]:
     sc_available = bool(config.get('SCRAPECREATORS_API_KEY'))
 
     # Determine active source
+    lobster_available = bool(config.get('LOBSTER_AVAILABLE'))
     if bird_status["authenticated"]:
         source = 'bird'
-    elif xai_available:
+    elif xai_available or lobster_available:
         source = 'xai'
     elif sc_available:
         source = 'scrapecreators'
