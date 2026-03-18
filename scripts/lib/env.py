@@ -420,7 +420,7 @@ def validate_sources(requested: str, available: str, include_web: bool = False) 
         else:
             return 'none', "No sources are available."
 
-        if include_web:
+        if include_web or has_web:
             if base == 'both':
                 return 'all', None
             if base == 'reddit':
