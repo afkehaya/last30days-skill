@@ -8,10 +8,39 @@ proxy or plain ``requests``.
 import json
 import shutil
 import subprocess
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import urlencode as _urlencode
 
 from .http import DEBUG, HTTPError, log
+
+
+def unwrap_envelope(data: dict, known_keys: Sequence[str]) -> dict:
+    """Unwrap an x402 response envelope if needed.
+
+    If ``data`` contains a ``"body"`` key but none of the ``known_keys``,
+    attempt to extract the inner response from ``body``.
+
+    Args:
+        data: Parsed JSON response (may be an x402 envelope).
+        known_keys: Keys whose presence indicates the response is already
+            fully unwrapped (e.g. ``("web", "news")`` for Brave).
+
+    Returns:
+        The unwrapped response dict, or ``data`` unchanged.
+    """
+    if "body" not in data or any(k in data for k in known_keys):
+        return data
+    body = data["body"]
+    if isinstance(body, dict):
+        return body
+    if isinstance(body, str):
+        try:
+            parsed = json.loads(body)
+            if isinstance(parsed, dict):
+                return parsed
+        except (ValueError, TypeError):
+            pass
+    return data
 
 
 def is_installed() -> bool:
@@ -189,23 +218,10 @@ def sc_get(
         if not isinstance(data, dict):
             log(f"[{log_prefix}] Lobster x402 returned non-dict: {type(data).__name__}")
             return empty_fallback
-        # Safety net: unwrap x402 envelope if x402_fetch didn't fully unwrap
-        if "body" in data and not any(k in data for k in known_keys):
-            body = data["body"]
-            if isinstance(body, dict):
-                log(f"[{log_prefix}] Unwrapping x402 envelope body (keys: {list(body.keys())[:5]})")
-                return body
-            if isinstance(body, str):
-                try:
-                    parsed = json.loads(body)
-                    if isinstance(parsed, dict):
-                        log(f"[{log_prefix}] Parsed x402 envelope body string (keys: {list(parsed.keys())[:5]})")
-                        return parsed
-                except (ValueError, TypeError):
-                    pass
-            log(f"[{log_prefix}] x402 envelope body unusable: type={type(body).__name__}")
-            return empty_fallback
-        return data
+        unwrapped = unwrap_envelope(data, known_keys)
+        if unwrapped is not data:
+            log(f"[{log_prefix}] Unwrapped x402 envelope (keys: {list(unwrapped.keys())[:5]})")
+        return unwrapped
     else:
         try:
             import requests as _requests

@@ -85,19 +85,7 @@ def search_web(
             sys.stderr.write(f"[Web] Brave Lobster x402 returned non-dict: {type(raw).__name__}\n")
             sys.stderr.flush()
             return []
-        # Safety net: unwrap x402 envelope if body key is present but expected keys are not
-        if "body" in raw and not any(k in raw for k in ("web", "news")):
-            body = raw["body"]
-            if isinstance(body, dict):
-                raw = body
-            elif isinstance(body, str):
-                import json as _json
-                try:
-                    parsed = _json.loads(body)
-                    if isinstance(parsed, dict):
-                        raw = parsed
-                except (ValueError, TypeError):
-                    pass
+        raw = lobster.unwrap_envelope(raw, ("web", "news"))
         return _normalize_results(raw, from_date, to_date)
 
     response = http.request(

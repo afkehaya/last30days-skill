@@ -259,16 +259,7 @@ def _global_search(
     """
     params = {"query": query, "sort": sort, "timeframe": timeframe}
 
-    # Lobster x402 path or requests path via _sc_get helper
-    if config and config.get('LOBSTER_AVAILABLE'):
-        try:
-            data = _sc_get(f"{SCRAPECREATORS_BASE}/search", params, {}, config=config)
-            return data.get("posts", data.get("data", []))
-        except Exception as e:
-            _log(f"Global search error (lobster): {e}")
-            return []
-
-    if not _requests:
+    if not _requests and not (config and config.get('LOBSTER_AVAILABLE')):
         _log("requests library not installed, falling back to urllib")
         # Use stdlib http module as fallback
         try:
@@ -284,7 +275,7 @@ def _global_search(
             return []
 
     try:
-        data = _sc_get(f"{SCRAPECREATORS_BASE}/search", params, _sc_headers(token))
+        data = _sc_get(f"{SCRAPECREATORS_BASE}/search", params, _sc_headers(token) if token else {}, config=config)
         return data.get("posts", data.get("data", []))
     except Exception as e:
         _log(f"Global search error: {e}")
@@ -317,15 +308,7 @@ def _subreddit_search(
         "sort": sort, "timeframe": timeframe,
     }
 
-    if config and config.get('LOBSTER_AVAILABLE'):
-        try:
-            data = _sc_get(f"{SCRAPECREATORS_BASE}/subreddit/search", params, {}, config=config)
-            return data.get("posts", data.get("data", []))
-        except Exception as e:
-            _log(f"Subreddit search error (lobster) for r/{subreddit}: {e}")
-            return []
-
-    if not _requests:
+    if not _requests and not (config and config.get('LOBSTER_AVAILABLE')):
         try:
             from urllib.parse import urlencode
             qs = urlencode(params)
@@ -339,7 +322,7 @@ def _subreddit_search(
             return []
 
     try:
-        data = _sc_get(f"{SCRAPECREATORS_BASE}/subreddit/search", params, _sc_headers(token))
+        data = _sc_get(f"{SCRAPECREATORS_BASE}/subreddit/search", params, _sc_headers(token) if token else {}, config=config)
         return data.get("posts", data.get("data", []))
     except Exception as e:
         _log(f"Subreddit search error for r/{subreddit}: {e}")
@@ -363,15 +346,7 @@ def fetch_post_comments(
     """
     params = {"url": url}
 
-    if config and config.get('LOBSTER_AVAILABLE'):
-        try:
-            data = _sc_get(f"{SCRAPECREATORS_BASE}/post/comments", params, {}, config=config)
-            return data.get("comments", data.get("data", []))
-        except Exception as e:
-            _log(f"Comment fetch error (lobster): {e}")
-            return []
-
-    if not _requests:
+    if not _requests and not (config and config.get('LOBSTER_AVAILABLE')):
         try:
             from urllib.parse import urlencode
             qs = urlencode(params)
@@ -385,7 +360,7 @@ def fetch_post_comments(
             return []
 
     try:
-        data = _sc_get(f"{SCRAPECREATORS_BASE}/post/comments", params, _sc_headers(token))
+        data = _sc_get(f"{SCRAPECREATORS_BASE}/post/comments", params, _sc_headers(token) if token else {}, config=config)
         return data.get("comments", data.get("data", []))
     except Exception as e:
         _log(f"Comment fetch error: {e}")

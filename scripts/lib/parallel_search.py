@@ -64,7 +64,7 @@ def search_web(
     # Lobster.cash x402 payment path (via Corbits proxy)
     if config and config.get('LOBSTER_AVAILABLE'):
         proxy_url = corbits_urls.get_proxy_url(ENDPOINT)
-        timeout_ms = 30000 if depth == "quick" else 30000 if depth == "default" else 60000
+        timeout_ms = 15000 if depth == "quick" else 30000 if depth == "default" else 60000
         try:
             raw = lobster.x402_fetch(proxy_url, method="POST", json_data=payload, timeout=timeout_ms)
         except Exception as e:
@@ -75,19 +75,7 @@ def search_web(
             sys.stderr.write(f"[Web] Parallel AI Lobster x402 returned non-dict: {type(raw).__name__}\n")
             sys.stderr.flush()
             return []
-        # Safety net: unwrap x402 envelope if body key is present but expected keys are not
-        if "body" in raw and "results" not in raw:
-            body = raw["body"]
-            if isinstance(body, dict):
-                raw = body
-            elif isinstance(body, str):
-                import json as _json
-                try:
-                    parsed = _json.loads(body)
-                    if isinstance(parsed, dict):
-                        raw = parsed
-                except (ValueError, TypeError):
-                    pass
+        raw = lobster.unwrap_envelope(raw, ("results",))
         return _normalize_results(raw)
 
     response = http.post(

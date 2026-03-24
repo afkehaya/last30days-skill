@@ -190,8 +190,10 @@ def get_models(
             mock_models=mock_openai_models,
             config=config,
         )
+        # select_xai_model only resolves aliases (no API call), so empty key is safe.
+        # If a model-list fetch is added later, add a Lobster proxy path like select_openai_model.
         result["xai"] = select_xai_model(
-            api_key="",  # Not needed for lobster path
+            api_key="",
             policy=config.get("XAI_MODEL_POLICY", "latest"),
             pin=config.get("XAI_MODEL_PIN"),
             mock_models=mock_xai_models,
