@@ -459,29 +459,30 @@ def validate_sources(requested: str, available: str, include_web: bool = False) 
 def get_x_source(config: Dict[str, Any]) -> Optional[str]:
     """Determine the best available X/Twitter source.
 
-    Priority: Bird (free) → xAI (paid API) → ScrapeCreators (shared key)
+    Priority: xAI (paid API / Lobster proxy) → Bird (free) → ScrapeCreators (shared key)
 
     Args:
         config: Configuration dict from get_config()
 
     Returns:
+        'xai' if XAI_API_KEY or Lobster proxy is available,
         'bird' if Bird is installed and authenticated,
-        'xai' if XAI_API_KEY is configured,
         'scrapecreators' if SCRAPECREATORS_API_KEY is configured,
         None if no X source available.
     """
     # Import here to avoid circular dependency
     from . import bird_x
 
-    # Check Bird first (free option)
+    # Prefer xAI when key or Lobster proxy is available (avoids Bird's
+    # browser-cookie probe which triggers macOS Keychain prompts).
+    if config.get('XAI_API_KEY') or config.get('LOBSTER_AVAILABLE'):
+        return 'xai'
+
+    # Fall back to Bird (free, but reads browser cookies)
     if bird_x.is_bird_installed():
         username = bird_x.is_bird_authenticated()
         if username:
             return 'bird'
-
-    # Fall back to xAI if key exists or Lobster can proxy xAI
-    if config.get('XAI_API_KEY') or config.get('LOBSTER_AVAILABLE'):
-        return 'xai'
 
     # Fall back to ScrapeCreators (same key as Reddit/TikTok/Instagram)
     if config.get('SCRAPECREATORS_API_KEY'):
