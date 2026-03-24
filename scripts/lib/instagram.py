@@ -11,14 +11,12 @@ import re
 import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
-from urllib.parse import urlencode as _urlencode
-
 try:
     import requests as _requests
 except ImportError:
     _requests = None
 
-from . import lobster, corbits_urls
+from . import lobster
 
 SCRAPECREATORS_BASE = "https://api.scrapecreators.com"
 
@@ -152,34 +150,14 @@ def _sc_headers(token: str) -> Dict[str, str]:
 def _sc_get(url: str, params: dict, headers: dict, config: dict = None, timeout: int = 30) -> dict:
     """Fetch from ScrapeCreators, routing through Lobster x402 proxy when available.
 
-    Returns parsed JSON in both paths.
+    Delegates to the shared ``lobster.sc_get()`` helper.
     """
-    if config and config.get('LOBSTER_AVAILABLE'):
-        full_url = f"{url}?{_urlencode(params)}" if params else url
-        proxy_url = corbits_urls.get_proxy_url(full_url)
-        data = lobster.x402_fetch(proxy_url, method="GET", timeout=timeout * 1000)
-        if not isinstance(data, dict):
-            _log(f"Lobster x402 returned non-dict: {type(data).__name__}")
-            return {}
-        # Safety net: unwrap x402 envelope if x402_fetch didn't fully unwrap
-        if "body" in data and not any(k in data for k in ("reels", "items", "data", "transcripts")):
-            body = data["body"]
-            if isinstance(body, dict):
-                return body
-            if isinstance(body, str):
-                try:
-                    parsed = __import__("json").loads(body)
-                    if isinstance(parsed, dict):
-                        return parsed
-                except (ValueError, TypeError):
-                    pass
-            _log(f"x402 envelope body unusable: type={type(body).__name__}")
-            return {}
-        return data
-    else:
-        resp = _requests.get(url, params=params, headers=headers, timeout=timeout)
-        resp.raise_for_status()
-        return resp.json()
+    return lobster.sc_get(
+        url, params, headers, config=config, timeout=timeout,
+        known_keys=("reels", "items", "data", "transcripts"),
+        empty_fallback={},
+        log_prefix="Instagram",
+    )
 
 
 def _parse_date(item: Dict[str, Any]) -> Optional[str]:

@@ -94,8 +94,8 @@ def select_openai_model(
                 selected = candidates[0]["id"]
                 cache.set_cached_model("openai", selected)
                 return selected
-        except Exception:
-            pass  # Fall through to fallback
+        except Exception as e:
+            http.log(f"lobster model fetch failed, falling back: {e}")
         return OPENAI_FALLBACK_MODELS[0]
 
     # Fetch model list

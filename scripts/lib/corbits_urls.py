@@ -1,10 +1,11 @@
 """Corbits proxy URL mapping for x402 micropayment endpoints."""
 
+import os
 from typing import Optional
 
 
-# Corbits proxy URL mapping
-PROXY_MAP = {
+# Default Corbits proxy URLs (overridable via environment variables)
+_DEFAULTS = {
     "https://api.openai.com": "https://openai.api.corbits.dev",
     "https://api.x.ai": "https://xai.alez-848f79.api.corbits.dev",
     "https://openrouter.ai": "https://openrouter.abklabs.api.corbits.dev",
@@ -12,6 +13,23 @@ PROXY_MAP = {
     "https://api.scrapecreators.com": "https://scrapecreators.abklabs.api.corbits.dev",
     "https://api.search.brave.com": "https://brave.abklabs.api.corbits.dev",
 }
+
+# Map of env var name -> original base URL it overrides
+_ENV_OVERRIDES = {
+    "CORBITS_PROXY_OPENAI": "https://api.openai.com",
+    "CORBITS_PROXY_XAI": "https://api.x.ai",
+    "CORBITS_PROXY_OPENROUTER": "https://openrouter.ai",
+    "CORBITS_PROXY_PARALLEL": "https://api.parallel.ai",
+    "CORBITS_PROXY_SCRAPECREATORS": "https://api.scrapecreators.com",
+    "CORBITS_PROXY_BRAVE": "https://api.search.brave.com",
+}
+
+# Build PROXY_MAP from defaults, overriding with env vars if set
+PROXY_MAP = dict(_DEFAULTS)
+for _env_var, _base_url in _ENV_OVERRIDES.items():
+    _override = os.environ.get(_env_var)
+    if _override:
+        PROXY_MAP[_base_url] = _override
 
 
 def get_proxy_url(original_url: str) -> str:

@@ -273,27 +273,48 @@ def search_reddit(
         # Adjust timeout based on depth
         timeout_ms = 90000 if depth == "quick" else 120000 if depth == "default" else 180000
 
-        payload = {
-            "model": model,
-            "tools": [
-                {
-                    "type": "web_search",
-                    "filters": {
-                        "allowed_domains": ["reddit.com"]
-                    }
-                }
-            ],
-            "include": ["web_search_call.action.sources"],
-            "input": REDDIT_SEARCH_PROMPT.format(
-                topic=topic,
-                from_date=from_date,
-                to_date=to_date,
-                min_items=min_items,
-                max_items=max_items,
-            ),
-        }
+        input_text_lobster = REDDIT_SEARCH_PROMPT.format(
+            topic=topic,
+            from_date=from_date,
+            to_date=to_date,
+            min_items=min_items,
+            max_items=max_items,
+        )
 
-        return lobster.x402_fetch(proxy_url, method="POST", json_data=payload, timeout=timeout_ms)
+        # Try model fallback chain (same as standard API path)
+        models_to_try_lobster = [model] + [m for m in MODEL_FALLBACK_ORDER if m != model]
+        last_lobster_error = None
+        for current_model in models_to_try_lobster:
+            payload = {
+                "model": current_model,
+                "tools": [
+                    {
+                        "type": "web_search",
+                        "filters": {
+                            "allowed_domains": ["reddit.com"]
+                        }
+                    }
+                ],
+                "include": ["web_search_call.action.sources"],
+                "input": input_text_lobster,
+            }
+            try:
+                return lobster.x402_fetch(proxy_url, method="POST", json_data=payload, timeout=timeout_ms)
+            except http.HTTPError as e:
+                last_lobster_error = e
+                _log_info(f"Lobster x402 failed with model {current_model}: {e}")
+                if _is_model_access_error(e):
+                    continue
+                # Non-access error, stop retrying
+                break
+            except Exception as e:
+                _log_error(f"Lobster x402 unexpected error with model {current_model}: {e}")
+                last_lobster_error = e
+                break
+
+        if last_lobster_error:
+            _log_error(f"All Lobster models failed. Last error: {last_lobster_error}")
+            raise last_lobster_error if isinstance(last_lobster_error, http.HTTPError) else http.HTTPError(str(last_lobster_error))
 
     if auth_source == env.AUTH_SOURCE_CODEX:
         if not account_id:

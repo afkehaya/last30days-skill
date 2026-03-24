@@ -11,14 +11,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
-from urllib.parse import urlencode
-
-try:
-    import requests as _requests
-except ImportError:
-    _requests = None
-
-from . import lobster, corbits_urls
+from . import lobster
 
 SCRAPECREATORS_BASE = "https://api.scrapecreators.com/v1/twitter"
 
@@ -104,6 +97,19 @@ def _sc_headers(token: str) -> Dict[str, str]:
     }
 
 
+def _sc_get(url: str, params: dict, headers: dict, config: dict = None, timeout: int = 30) -> dict:
+    """Fetch from ScrapeCreators, routing through Lobster x402 proxy when available.
+
+    Delegates to the shared ``lobster.sc_get()`` helper.
+    """
+    return lobster.sc_get(
+        url, params, headers, config=config, timeout=timeout,
+        known_keys=("tweets", "data", "results"),
+        empty_fallback={"tweets": [], "data": []},
+        log_prefix="X/SC",
+    )
+
+
 def _parse_date(item: Dict[str, Any]) -> Optional[str]:
     """Parse date from ScrapeCreators Twitter item to YYYY-MM-DD."""
     # Try created_at string (e.g. "Wed Oct 10 20:19:24 +0000 2018")
@@ -159,23 +165,13 @@ def search_x(
     _log(f"Searching X for '{core_topic}' (depth={depth}, count={depth_config['results_per_page']})")
 
     try:
-        # Lobster x402 payment path (via Corbits proxy)
-        if config and config.get('LOBSTER_AVAILABLE'):
-            params = urlencode({"query": core_topic, "sort_by": "relevance"})
-            full_url = f"{SCRAPECREATORS_BASE}/search/tweets?{params}"
-            proxy_url = corbits_urls.get_proxy_url(full_url)
-            data = lobster.x402_fetch(proxy_url, method="GET", timeout=30000)
-        else:
-            if not _requests:
-                return {"items": [], "error": "requests library not installed"}
-            resp = _requests.get(
-                f"{SCRAPECREATORS_BASE}/search/tweets",
-                params={"query": core_topic, "sort_by": "relevance"},
-                headers=_sc_headers(token),
-                timeout=30,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        data = _sc_get(
+            f"{SCRAPECREATORS_BASE}/search/tweets",
+            {"query": core_topic, "sort_by": "relevance"},
+            _sc_headers(token) if token else {},
+            config=config,
+            timeout=30,
+        )
     except Exception as e:
         _log(f"ScrapeCreators error: {e}")
         return {"items": [], "error": f"{type(e).__name__}: {e}"}

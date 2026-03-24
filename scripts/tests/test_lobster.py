@@ -41,6 +41,7 @@ def test_is_wallet_configured_true(mock_run):
         ["lobster", "wallet", "info"],
         capture_output=True,
         text=True,
+        timeout=30,
     )
 
 
@@ -77,6 +78,7 @@ def test_get_balance(mock_run):
         ["lobster", "balance"],
         capture_output=True,
         text=True,
+        timeout=30,
     )
 
 
@@ -174,3 +176,113 @@ def test_get_setup_instructions():
     assert len(instructions) > 0
     assert "lobster" in instructions.lower()
     assert "npm install" in instructions
+
+
+# ---------------------------------------------------------------------------
+# x402_fetch — envelope parsing
+# ---------------------------------------------------------------------------
+
+@patch("subprocess.run")
+def test_x402_fetch_envelope_dict_body(mock_run):
+    """Envelope with dict body returns the body dict directly."""
+    envelope = {"body": {"key": "value"}, "status": 200}
+    mock_run.return_value = MagicMock(
+        returncode=0,
+        stdout=json.dumps(envelope),
+        stderr="",
+    )
+    result = lobster.x402_fetch("https://example.com/api")
+    assert result == {"key": "value"}
+
+
+@patch("subprocess.run")
+def test_x402_fetch_envelope_list_body(mock_run):
+    """Envelope with list body returns the body list directly."""
+    envelope = {"body": [1, 2, 3], "status": 200}
+    mock_run.return_value = MagicMock(
+        returncode=0,
+        stdout=json.dumps(envelope),
+        stderr="",
+    )
+    result = lobster.x402_fetch("https://example.com/api")
+    assert result == [1, 2, 3]
+
+
+@patch("subprocess.run")
+def test_x402_fetch_envelope_json_string_body(mock_run):
+    """Envelope with JSON-string body parses and returns the parsed dict."""
+    inner = {"key": "value"}
+    envelope = {"body": json.dumps(inner), "status": 200}
+    mock_run.return_value = MagicMock(
+        returncode=0,
+        stdout=json.dumps(envelope),
+        stderr="",
+    )
+    result = lobster.x402_fetch("https://example.com/api")
+    assert result == {"key": "value"}
+
+
+@patch("subprocess.run")
+def test_x402_fetch_envelope_non_json_string_body(mock_run):
+    """Envelope with non-JSON string body returns the full envelope."""
+    envelope = {"body": "plain text", "status": 200}
+    mock_run.return_value = MagicMock(
+        returncode=0,
+        stdout=json.dumps(envelope),
+        stderr="",
+    )
+    result = lobster.x402_fetch("https://example.com/api")
+    # Code cannot parse "plain text" as JSON, so it returns the full envelope
+    assert result == envelope
+
+
+@patch("subprocess.run")
+def test_x402_fetch_envelope_no_body_key(mock_run):
+    """Envelope with no 'body' key returns the full envelope."""
+    envelope = {"status": 200, "data": "foo"}
+    mock_run.return_value = MagicMock(
+        returncode=0,
+        stdout=json.dumps(envelope),
+        stderr="",
+    )
+    result = lobster.x402_fetch("https://example.com/api")
+    assert result == envelope
+
+
+# ---------------------------------------------------------------------------
+# x402_fetch — error paths
+# ---------------------------------------------------------------------------
+
+@patch("subprocess.run", side_effect=FileNotFoundError("lobster not found"))
+def test_x402_fetch_file_not_found(mock_run):
+    """FileNotFoundError from subprocess.run raises HTTPError."""
+    with pytest.raises(HTTPError, match="lobster CLI not found"):
+        lobster.x402_fetch("https://example.com/api")
+
+
+@patch("subprocess.run")
+def test_x402_fetch_invalid_json_stdout(mock_run):
+    """Non-JSON stdout raises HTTPError with decode info."""
+    mock_run.return_value = MagicMock(
+        returncode=0,
+        stdout="this is not json",
+        stderr="",
+    )
+    with pytest.raises(HTTPError, match="Invalid JSON from lobster x402 fetch"):
+        lobster.x402_fetch("https://example.com/api")
+
+
+# ---------------------------------------------------------------------------
+# get_balance — JSONDecodeError path
+# ---------------------------------------------------------------------------
+
+@patch("subprocess.run")
+def test_get_balance_json_decode_error(mock_run):
+    """get_balance with non-JSON stdout returns empty dict."""
+    mock_run.return_value = MagicMock(
+        returncode=0,
+        stdout="not valid json",
+        stderr="",
+    )
+    result = lobster.get_balance()
+    assert result == {}

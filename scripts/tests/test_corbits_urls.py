@@ -1,4 +1,8 @@
 """Tests for Corbits proxy URL mapping."""
+import importlib
+import os
+from unittest.mock import patch
+
 import pytest
 
 from lib import corbits_urls
@@ -118,3 +122,31 @@ def test_is_proxied_brave():
 
 def test_is_proxied_false():
     assert corbits_urls.is_proxied("https://unknown.example.com/api") is False
+
+
+# ---------------------------------------------------------------------------
+# Environment variable overrides
+# ---------------------------------------------------------------------------
+
+def test_env_var_override_openai():
+    """Setting CORBITS_PROXY_OPENAI overrides the default proxy URL."""
+    custom_url = "https://custom-openai.example.com"
+    with patch.dict(os.environ, {"CORBITS_PROXY_OPENAI": custom_url}):
+        importlib.reload(corbits_urls)
+        result = corbits_urls.get_proxy_url("https://api.openai.com/v1/responses")
+        assert result == f"{custom_url}/v1/responses"
+    # Reload to restore defaults
+    importlib.reload(corbits_urls)
+
+
+def test_env_var_unset_falls_back_to_default():
+    """Unsetting env var falls back to the default proxy URL."""
+    # Ensure env var is not set
+    env = os.environ.copy()
+    env.pop("CORBITS_PROXY_OPENAI", None)
+    with patch.dict(os.environ, env, clear=True):
+        importlib.reload(corbits_urls)
+        result = corbits_urls.get_proxy_url("https://api.openai.com/v1/responses")
+        assert result == "https://openai.api.corbits.dev/v1/responses"
+    # Reload to restore defaults
+    importlib.reload(corbits_urls)

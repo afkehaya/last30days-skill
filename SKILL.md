@@ -67,7 +67,7 @@ Run: `which lobster`
   >
   > To enable x402 payments via Lobster.cash instead:
   > 1. Install: `npm install -g @crossmint/lobster-cli`
-  > 2. Set up wallet: `lobster setup`
+  > 2. Set up wallet: `lobster wallet create`
   > 3. Fund with USDC on Solana
   >
   > With Lobster.cash, no API keys are needed — all API calls are paid via your wallet through Corbits proxy endpoints."
@@ -79,7 +79,7 @@ Run: `lobster wallet info`
 
 - If wallet is configured → proceed to Step 3
 - If no wallet → inform the user:
-  > "Lobster.cash CLI is installed but no wallet is configured. Run `lobster setup` to create one, or continue with API keys."
+  > "Lobster.cash CLI is installed but no wallet is configured. Run `lobster wallet create` to create one, or continue with API keys."
 
   Then continue with the existing API key flow.
 

@@ -420,7 +420,7 @@ def validate_sources(requested: str, available: str, include_web: bool = False) 
         else:
             return 'none', "No sources are available."
 
-        if include_web or has_web:
+        if include_web:
             if base == 'both':
                 return 'all', None
             if base == 'reddit':
@@ -479,8 +479,8 @@ def get_x_source(config: Dict[str, Any]) -> Optional[str]:
         if username:
             return 'bird'
 
-    # Fall back to xAI if key exists
-    if config.get('XAI_API_KEY'):
+    # Fall back to xAI if key exists or Lobster can proxy xAI
+    if config.get('XAI_API_KEY') or config.get('LOBSTER_AVAILABLE'):
         return 'xai'
 
     # Fall back to ScrapeCreators (same key as Reddit/TikTok/Instagram)
@@ -624,6 +624,7 @@ def get_x_source_status(config: Dict[str, Any]) -> Dict[str, Any]:
         "bird_authenticated": bird_status["authenticated"],
         "bird_username": bird_status["username"],
         "xai_available": xai_available,
+        "lobster_available": lobster_available,
         "scrapecreators_available": sc_available,
         "can_install_bird": bird_status["can_install"],
     }

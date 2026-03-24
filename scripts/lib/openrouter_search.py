@@ -70,9 +70,31 @@ def search_web(
     # Lobster.cash x402 payment path (via Corbits proxy)
     if config and config.get('LOBSTER_AVAILABLE'):
         proxy_url = corbits_urls.get_proxy_url(ENDPOINT)
-        timeout_ms = 30000 if depth == "quick" else 30000 if depth == "default" else 60000
-        raw = lobster.x402_fetch(proxy_url, method="POST", json_data=payload, timeout=timeout_ms)
-        return _normalize_results(raw) if isinstance(raw, dict) else raw
+        timeout_ms = 15000 if depth == "quick" else 30000 if depth == "default" else 60000
+        try:
+            raw = lobster.x402_fetch(proxy_url, method="POST", json_data=payload, timeout=timeout_ms)
+        except Exception as e:
+            sys.stderr.write(f"[Web] Sonar Pro Lobster x402 error: {e}\n")
+            sys.stderr.flush()
+            raise
+        if not isinstance(raw, dict):
+            sys.stderr.write(f"[Web] Sonar Pro Lobster x402 returned non-dict: {type(raw).__name__}\n")
+            sys.stderr.flush()
+            return []
+        # Safety net: unwrap x402 envelope if body key is present but expected keys are not
+        if "body" in raw and not any(k in raw for k in ("choices", "search_results", "citations")):
+            body = raw["body"]
+            if isinstance(body, dict):
+                raw = body
+            elif isinstance(body, str):
+                import json as _json
+                try:
+                    parsed = _json.loads(body)
+                    if isinstance(parsed, dict):
+                        raw = parsed
+                except (ValueError, TypeError):
+                    pass
+        return _normalize_results(raw)
 
     response = http.post(
         ENDPOINT,

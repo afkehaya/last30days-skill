@@ -1,9 +1,15 @@
-"""Lobster.cash CLI wrapper for x402 payment integration (stdlib only)."""
+"""Lobster.cash CLI wrapper for x402 payment integration (stdlib only).
+
+Also provides the shared ``sc_get()`` helper used by reddit.py, tiktok.py,
+and instagram.py to fetch from ScrapeCreators via either the Lobster x402
+proxy or plain ``requests``.
+"""
 
 import json
 import shutil
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
+from urllib.parse import urlencode as _urlencode
 
 from .http import DEBUG, HTTPError, log
 
@@ -24,13 +30,14 @@ def is_wallet_configured() -> bool:
             ["lobster", "wallet", "info"],
             capture_output=True,
             text=True,
+            timeout=30,
         )
         if result.returncode != 0:
             log(f"lobster wallet info failed: {result.stderr.strip()}")
             return False
         data = json.loads(result.stdout)
         return bool(data)
-    except (json.JSONDecodeError, FileNotFoundError, OSError) as e:
+    except (json.JSONDecodeError, FileNotFoundError, OSError, subprocess.TimeoutExpired) as e:
         log(f"lobster wallet check error: {e}")
         return False
 
@@ -46,12 +53,13 @@ def get_balance() -> Dict[str, Any]:
             ["lobster", "balance"],
             capture_output=True,
             text=True,
+            timeout=30,
         )
         if result.returncode != 0:
             log(f"lobster balance failed: {result.stderr.strip()}")
             return {}
         return json.loads(result.stdout)
-    except (json.JSONDecodeError, FileNotFoundError, OSError) as e:
+    except (json.JSONDecodeError, FileNotFoundError, OSError, subprocess.TimeoutExpired) as e:
         log(f"lobster balance error: {e}")
         return {}
 
@@ -67,7 +75,9 @@ def x402_fetch(
 
     Args:
         url: The URL to fetch (payment handled automatically by x402).
-        method: HTTP method (GET or POST).
+        method: HTTP method label for logging only. The lobster CLI infers
+            the actual method from the presence of ``--json`` (POST) or its
+            absence (GET); this parameter does not control CLI behavior.
         json_data: Optional JSON body for POST requests.
         headers: Optional dict of extra headers (key: value).
         timeout: Payment timeout in milliseconds.
@@ -91,12 +101,18 @@ def x402_fetch(
 
     log(f"lobster x402 fetch {method} {url}")
 
+    # Convert timeout from ms to seconds for subprocess, with a minimum of 30s
+    subprocess_timeout = max(timeout // 1000, 30)
+
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
+            timeout=subprocess_timeout,
         )
+    except subprocess.TimeoutExpired:
+        raise HTTPError(f"lobster x402 fetch timed out after {subprocess_timeout}s")
     except FileNotFoundError:
         raise HTTPError("lobster CLI not found. Run: npm install -g @crossmint/lobster-cli")
 
@@ -127,6 +143,81 @@ def x402_fetch(
     return envelope
 
 
+def sc_get(
+    url: str,
+    params: dict,
+    headers: dict,
+    config: dict = None,
+    timeout: int = 30,
+    *,
+    known_keys: Sequence[str] = (),
+    empty_fallback: Optional[Dict[str, Any]] = None,
+    log_prefix: str = "sc_get",
+) -> dict:
+    """Fetch from ScrapeCreators, routing through Lobster x402 proxy when available.
+
+    This is the shared helper used by reddit.py, tiktok.py, and instagram.py
+    so that envelope-unwrapping logic is not duplicated.
+
+    Args:
+        url: ScrapeCreators API URL.
+        params: Query parameters dict.
+        headers: HTTP headers (used only on the direct-requests path).
+        config: Runtime config dict; if ``config['LOBSTER_AVAILABLE']`` is
+            truthy the request is routed through the Lobster x402 proxy.
+        timeout: Timeout in **seconds** (converted to ms for lobster CLI).
+        known_keys: Sequence of response-level keys that indicate the x402
+            envelope was already fully unwrapped (e.g. ``("posts", "data")``
+            for Reddit).  When *none* of these keys are present but ``"body"``
+            is, the function performs an extra unwrap attempt.
+        empty_fallback: Value to return when the x402 response is unusable.
+            Defaults to ``{}``.
+        log_prefix: Label used in log messages (e.g. ``"Reddit"``).
+
+    Returns:
+        Parsed JSON response dict.
+    """
+    from . import corbits_urls  # local import to avoid circular at module level
+
+    if empty_fallback is None:
+        empty_fallback = {}
+
+    if config and config.get('LOBSTER_AVAILABLE'):
+        full_url = f"{url}?{_urlencode(params)}" if params else url
+        proxy_url = corbits_urls.get_proxy_url(full_url)
+        data = x402_fetch(proxy_url, method="GET", timeout=timeout * 1000)
+        if not isinstance(data, dict):
+            log(f"[{log_prefix}] Lobster x402 returned non-dict: {type(data).__name__}")
+            return empty_fallback
+        # Safety net: unwrap x402 envelope if x402_fetch didn't fully unwrap
+        if "body" in data and not any(k in data for k in known_keys):
+            body = data["body"]
+            if isinstance(body, dict):
+                log(f"[{log_prefix}] Unwrapping x402 envelope body (keys: {list(body.keys())[:5]})")
+                return body
+            if isinstance(body, str):
+                try:
+                    parsed = json.loads(body)
+                    if isinstance(parsed, dict):
+                        log(f"[{log_prefix}] Parsed x402 envelope body string (keys: {list(parsed.keys())[:5]})")
+                        return parsed
+                except (ValueError, TypeError):
+                    pass
+            log(f"[{log_prefix}] x402 envelope body unusable: type={type(body).__name__}")
+            return empty_fallback
+        return data
+    else:
+        try:
+            import requests as _requests
+        except ImportError:
+            _requests = None
+        if _requests is None:
+            raise ImportError("requests library required for non-Lobster ScrapeCreators calls")
+        resp = _requests.get(url, params=params, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+
+
 def get_setup_instructions() -> str:
     """Return user-friendly install and setup instructions for Lobster.cash."""
     return (
@@ -139,7 +230,7 @@ def get_setup_instructions() -> str:
         "2. Create a wallet:\n"
         "   lobster wallet create\n"
         "\n"
-        "3. Fund your wallet with USDC on Base to enable x402 payments.\n"
+        "3. Fund your wallet with USDC on Solana to enable x402 payments.\n"
         "   Run `lobster wallet info` to see your wallet address.\n"
         "\n"
         "4. Verify setup:\n"

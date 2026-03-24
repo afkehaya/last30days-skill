@@ -112,7 +112,14 @@ def search_x(
             ],
         }
 
-        return lobster.x402_fetch(proxy_url, method="POST", json_data=payload, timeout=timeout_ms)
+        try:
+            return lobster.x402_fetch(proxy_url, method="POST", json_data=payload, timeout=timeout_ms)
+        except http.HTTPError as e:
+            _log_error(f"Lobster x402 xAI request failed: {e}")
+            raise
+        except Exception as e:
+            _log_error(f"Lobster x402 xAI unexpected error: {e}")
+            raise http.HTTPError(f"Lobster x402 xAI error: {e}")
 
     headers = {
         "Authorization": f"Bearer {api_key}",
