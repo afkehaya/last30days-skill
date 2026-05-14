@@ -54,42 +54,107 @@ metadata:
 
 Research ANY topic across Reddit, X, Bluesky, Truth Social, YouTube, TikTok, Hacker News, Polymarket, and the web. Surface what people are actually discussing, recommending, betting on, and debating right now.
 
-## Lobster.cash Wallet Precheck
+## Lobster.cash Wallet Precheck (Interactive Onboarding)
 
-Before running the research pipeline, check if the user has a Lobster.cash wallet configured for x402 payments:
+Before running the research pipeline, check if the user has a Lobster.cash wallet configured for x402 payments. **Lobster is the DEFAULT and recommended path** — it requires no API keys and works immediately once funded. Only fall back to API keys if the user explicitly opts out.
 
 **Step 1: Check if lobster CLI is installed**
 Run: `which lobster`
 
 - If found → proceed to Step 2
-- If not found → inform the user:
-  > "The Lobster.cash CLI is not installed. You can still use this skill with API keys (OPENAI_API_KEY and XAI_API_KEY in ~/.config/last30days/.env).
-  >
-  > To enable x402 payments via Lobster.cash instead:
-  > 1. Install: `npm install -g @crossmint/lobster-cli`
-  > 2. Set up wallet: `lobster wallet create`
-  > 3. Fund with USDC on Solana
-  >
-  > With Lobster.cash, no API keys are needed — all API calls are paid via your wallet through Corbits proxy endpoints."
+- If NOT found → check for API key fallback availability:
 
-  Then continue with the existing API key flow.
+  Run: `cat ~/.config/last30days/.env 2>/dev/null | grep -c 'API_KEY\|API_TOKEN'`
 
-**Step 2: Check wallet status**
-Run: `lobster wallet info`
+  **If API keys exist**, use AskUserQuestion:
+  > **header:** "Lobster.cash Setup"
+  > **question:** "The Lobster.cash CLI is not installed. Lobster lets you run this skill without managing API keys — all API calls are paid via your crypto wallet through x402. You have API keys configured, so you can proceed either way."
+  > **options:**
+  > - **"Install Lobster (recommended)"** — "No API keys needed. Install the CLI and set up a wallet now (~2 minutes)."
+  > - **"Use my API keys"** — "Skip Lobster setup and use existing API keys in ~/.config/last30days/.env."
 
-- If wallet is configured → proceed to Step 3
-- If no wallet → inform the user:
-  > "Lobster.cash CLI is installed but no wallet is configured. Run `lobster wallet create` to create one, or continue with API keys."
+  - If user chooses "Use my API keys" → skip to research pipeline (existing API key flow)
+  - If user chooses "Install Lobster" → proceed to Step 1b
 
-  Then continue with the existing API key flow.
+  **If NO API keys exist**, do NOT ask — Lobster is the only viable path. Tell the user:
+  > "No API keys are configured and the Lobster.cash CLI is not installed. Let me walk you through setting up Lobster — it takes about 2 minutes and you won't need any API keys."
+
+  Proceed directly to Step 1b.
+
+**Step 1b: Install the Lobster CLI**
+Run: `npm install -g @crossmint/lobster-cli`
+
+- If install succeeds → tell the user "Lobster CLI installed." and proceed to Step 2.
+- If install fails (e.g., no npm, permission error) → show the error output and use AskUserQuestion:
+  > **header:** "Installation failed"
+  > **question:** "The Lobster CLI install failed. Here's the error: `{error output}`. Would you like to troubleshoot or switch to API keys?"
+  > **options:**
+  > - **"Try with sudo"** — "Run `sudo npm install -g @crossmint/lobster-cli`"
+  > - **"I'll fix it myself"** — "I'll install it manually and re-run /last30days"
+  > - **"Switch to API keys"** — "Set up API keys in ~/.config/last30days/.env instead"
+
+  - If "Try with sudo" → run `sudo npm install -g @crossmint/lobster-cli`, then re-check
+  - If "I'll fix it myself" → STOP. Tell the user to re-run /last30days after installing.
+  - If "Switch to API keys" → tell the user to add keys to `~/.config/last30days/.env` and re-run. STOP.
+
+**Step 2: Check wallet/agent status**
+Run: `lobster agents list 2>/dev/null || lobster wallet info 2>/dev/null`
+
+- If an active agent/wallet is configured → proceed to Step 3
+- If no agent/wallet → walk the user through setup:
+
+  Tell the user: "Lobster CLI is installed but no wallet is set up yet. Let me walk you through it."
+
+  Run: `lobster setup`
+
+  Then run: `lobster agents register --name last30days-agent`
+
+  After each command, check the exit code. If either fails, show the error and use AskUserQuestion:
+  > **header:** "Wallet setup issue"
+  > **question:** "Wallet setup encountered an issue: `{error}`. How would you like to proceed?"
+  > **options:**
+  > - **"Retry"** — "Try the setup command again"
+  > - **"I'll set it up manually"** — "I'll run `lobster setup` myself and re-run /last30days"
+  > - **"Switch to API keys"** — "Use API keys instead of Lobster"
+
+  If setup succeeds → proceed to Step 3
 
 **Step 3: Check balance**
-Run: `lobster balance`
+Run: `lobster crypto balance 2>/dev/null || lobster balance 2>/dev/null`
 
-- If sufficient USDC balance → inform the user: "Lobster.cash wallet detected. API calls will be paid via x402 through Corbits proxy endpoints."
-- If zero/low balance → warn: "Lobster.cash wallet has low USDC balance. Fund your wallet or fall back to API keys."
+Parse the output for USDC balance.
 
-**Note:** The Python script handles routing automatically. When Lobster.cash is available, API calls go through Corbits proxies (openai.api.corbits.dev, xai.alez-848f79.api.corbits.dev) and are paid via x402. When not available, the existing API key flow is used unchanged.
+- If USDC balance >= 1.00 → tell the user: "Lobster.cash wallet ready. Balance: {balance} USDC. API calls will be paid via x402 through Corbits proxy endpoints." Proceed to research pipeline.
+
+- If USDC balance > 0 but < 1.00 → warn and proceed:
+  > "Lobster.cash wallet has {balance} USDC — this may not be enough for a full research run (typically costs $0.10-0.50). Proceeding, but you may want to top up."
+
+  Proceed to research pipeline.
+
+- If USDC balance is 0 or no balance found → STOP and walk through funding:
+  > Tell the user: "Your Lobster wallet has no USDC balance. You need to fund it before research can run."
+
+  Run `lobster crypto balance` to get the wallet address, then use AskUserQuestion:
+  > **header:** "Fund your wallet"
+  > **question:** "Your Lobster wallet address is `{wallet_address}`. Send USDC on Solana to this address to fund it. A typical research run costs $0.10-0.50 in API fees. You can fund with any amount — even $5 will last for many runs.\n\nHave you sent USDC to this wallet?"
+  > **options:**
+  > - **"Yes, check balance now"** — "I've sent USDC, verify it arrived"
+  > - **"I'll fund it later"** — "Skip for now, I'll come back when funded"
+  > - **"Switch to API keys"** — "Use API keys instead of Lobster"
+
+  - If "Yes, check balance now" → re-run `lobster crypto balance`. If balance > 0, proceed. If still 0, tell user "Balance still shows 0 USDC — Solana transactions usually confirm in seconds. You may need to wait a moment and re-run /last30days."  STOP.
+  - If "I'll fund it later" → STOP. Tell user to re-run /last30days after funding.
+  - If "Switch to API keys" → tell user to add keys to `~/.config/last30days/.env` and re-run. STOP.
+
+**Step 4: Verification (only on first-time setup)**
+If Steps 1b or 2 performed any setup actions (install, wallet create, agent register), do a quick verification:
+
+Run: `lobster status`
+
+- If status looks healthy → tell the user: "Lobster.cash is fully configured and ready. All API calls will be routed through x402 — no API keys needed."
+- If status shows issues → show the output and let the user decide whether to proceed or troubleshoot.
+
+**Note:** The Python script handles routing automatically. When Lobster.cash is available (`LOBSTER_AVAILABLE=True` in config), API calls go through Corbits proxies (openai.api.corbits.dev, xai.alez-848f79.api.corbits.dev) and are paid via x402. When not available, the existing API key flow is used unchanged. The `env.py` module detects Lobster availability via `lobster.is_installed()` and `lobster.is_wallet_configured()` — no changes needed there.
 
 ## CRITICAL: Parse User Intent
 
@@ -176,6 +241,11 @@ Store: `RESOLVED_HANDLE = {handle or empty}`
 ## Agent Mode (--agent flag)
 
 If `--agent` appears in ARGUMENTS (e.g., `/last30days plaud granola --agent`):
+
+**Lobster check (non-interactive):** Before running, silently check `which lobster` and `lobster agents list 2>/dev/null`. If lobster is installed with an active agent, proceed. If NOT available, check for API keys in `~/.config/last30days/.env`. If neither exists, output an error and stop:
+> "ERROR: No Lobster.cash wallet or API keys configured. Run `/last30days` interactively first to set up Lobster, or add API keys to `~/.config/last30days/.env`."
+
+Do NOT attempt interactive onboarding in agent mode.
 
 1. **Skip** the intro display block ("I'll research X across Reddit...")
 2. **Skip** any `AskUserQuestion` calls - use `TARGET_TOOL = "unknown"` if not specified

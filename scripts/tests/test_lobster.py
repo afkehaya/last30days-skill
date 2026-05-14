@@ -30,19 +30,38 @@ def test_is_installed_false(mock_which):
 # ---------------------------------------------------------------------------
 
 @patch("subprocess.run")
-def test_is_wallet_configured_true(mock_run):
+def test_is_wallet_configured_true_v3(mock_run):
+    """v3.x: lobster agents list with an active agent."""
     mock_run.return_value = MagicMock(
         returncode=0,
-        stdout=json.dumps({"address": "0xabc123", "balance": "1.00"}),
+        stdout="  last30days-agent (active)\n  other-agent\n",
         stderr="",
     )
     assert lobster.is_wallet_configured() is True
     mock_run.assert_called_once_with(
-        ["lobster", "wallet", "info"],
+        ["lobster", "agents", "list"],
         capture_output=True,
         text=True,
         timeout=30,
     )
+
+
+@patch("subprocess.run")
+def test_is_wallet_configured_true_v1_fallback(mock_run):
+    """v1.x fallback: lobster wallet info returns valid JSON."""
+    def side_effect(*args, **kwargs):
+        cmd = args[0]
+        if cmd[1] == "agents":
+            # v3.x command fails
+            return MagicMock(returncode=1, stdout="", stderr="unknown command")
+        # v1.x fallback succeeds
+        return MagicMock(
+            returncode=0,
+            stdout=json.dumps({"address": "0xabc123", "balance": "1.00"}),
+            stderr="",
+        )
+    mock_run.side_effect = side_effect
+    assert lobster.is_wallet_configured() is True
 
 
 @patch("subprocess.run", side_effect=FileNotFoundError("lobster not found"))
@@ -52,10 +71,11 @@ def test_is_wallet_configured_false_not_installed(mock_run):
 
 @patch("subprocess.run")
 def test_is_wallet_configured_false_no_wallet(mock_run):
+    """v3.x agents list returns 0 but no active agent."""
     mock_run.return_value = MagicMock(
-        returncode=1,
-        stdout="",
-        stderr="No wallet configured",
+        returncode=0,
+        stdout="  other-agent\n",
+        stderr="",
     )
     assert lobster.is_wallet_configured() is False
 
@@ -65,17 +85,17 @@ def test_is_wallet_configured_false_no_wallet(mock_run):
 # ---------------------------------------------------------------------------
 
 @patch("subprocess.run")
-def test_get_balance(mock_run):
-    balance_data = {"usdc": "5.25", "network": "base"}
+def test_get_balance_v3(mock_run):
+    """v3.x: lobster crypto balance returns human-readable text."""
     mock_run.return_value = MagicMock(
         returncode=0,
-        stdout=json.dumps(balance_data),
+        stdout="Smart Wallet: 7xABC123def\n  usdc: 5.25\n  sol: 0.05\n",
         stderr="",
     )
     result = lobster.get_balance()
-    assert result == balance_data
+    assert result == {"usdc": 5.25, "sol": 0.05, "wallet": "7xABC123def"}
     mock_run.assert_called_once_with(
-        ["lobster", "balance"],
+        ["lobster", "crypto", "balance"],
         capture_output=True,
         text=True,
         timeout=30,
@@ -83,7 +103,24 @@ def test_get_balance(mock_run):
 
 
 @patch("subprocess.run")
+def test_get_balance_v1_fallback(mock_run):
+    """v1.x fallback: lobster balance returns JSON."""
+    balance_data = {"usdc": "5.25", "network": "base"}
+    def side_effect(*args, **kwargs):
+        cmd = args[0]
+        if cmd[1] == "crypto":
+            # v3.x command fails
+            return MagicMock(returncode=1, stdout="", stderr="unknown command")
+        # v1.x fallback succeeds
+        return MagicMock(returncode=0, stdout=json.dumps(balance_data), stderr="")
+    mock_run.side_effect = side_effect
+    result = lobster.get_balance()
+    assert result == balance_data
+
+
+@patch("subprocess.run")
 def test_get_balance_error(mock_run):
+    """Both v3.x and v1.x fail → empty dict."""
     mock_run.return_value = MagicMock(
         returncode=1,
         stdout="",
@@ -109,7 +146,7 @@ def test_x402_fetch_get(mock_run):
     assert result == response_data
 
     cmd = mock_run.call_args[0][0]
-    assert cmd[0:4] == ["lobster", "x402", "fetch", "https://openai.api.corbits.dev/v1/responses"]
+    assert cmd[0:5] == ["lobster", "crypto", "x402", "fetch", "https://openai.api.corbits.dev/v1/responses"]
     assert "--json" not in cmd
     assert "--timeout" in cmd
 
@@ -183,9 +220,9 @@ def test_get_setup_instructions():
 # ---------------------------------------------------------------------------
 
 @patch("subprocess.run")
-def test_x402_fetch_envelope_dict_body(mock_run):
-    """Envelope with dict body returns the body dict directly."""
-    envelope = {"body": {"key": "value"}, "status": 200}
+def test_x402_fetch_v1_envelope_dict_body(mock_run):
+    """v1.x envelope with dict body returns the body dict directly."""
+    envelope = {"body": {"key": "value"}, "status": 200, "paymentSucceeded": True}
     mock_run.return_value = MagicMock(
         returncode=0,
         stdout=json.dumps(envelope),
@@ -196,9 +233,9 @@ def test_x402_fetch_envelope_dict_body(mock_run):
 
 
 @patch("subprocess.run")
-def test_x402_fetch_envelope_list_body(mock_run):
-    """Envelope with list body returns the body list directly."""
-    envelope = {"body": [1, 2, 3], "status": 200}
+def test_x402_fetch_v1_envelope_list_body(mock_run):
+    """v1.x envelope with list body returns the body list directly."""
+    envelope = {"body": [1, 2, 3], "status": 200, "paymentSucceeded": True}
     mock_run.return_value = MagicMock(
         returncode=0,
         stdout=json.dumps(envelope),
@@ -209,10 +246,10 @@ def test_x402_fetch_envelope_list_body(mock_run):
 
 
 @patch("subprocess.run")
-def test_x402_fetch_envelope_json_string_body(mock_run):
-    """Envelope with JSON-string body parses and returns the parsed dict."""
+def test_x402_fetch_v1_envelope_json_string_body(mock_run):
+    """v1.x envelope with JSON-string body parses and returns the parsed dict."""
     inner = {"key": "value"}
-    envelope = {"body": json.dumps(inner), "status": 200}
+    envelope = {"body": json.dumps(inner), "status": 200, "paymentSucceeded": True}
     mock_run.return_value = MagicMock(
         returncode=0,
         stdout=json.dumps(envelope),
@@ -223,9 +260,9 @@ def test_x402_fetch_envelope_json_string_body(mock_run):
 
 
 @patch("subprocess.run")
-def test_x402_fetch_envelope_non_json_string_body(mock_run):
-    """Envelope with non-JSON string body returns the full envelope."""
-    envelope = {"body": "plain text", "status": 200}
+def test_x402_fetch_v1_envelope_non_json_string_body(mock_run):
+    """v1.x envelope with non-JSON string body returns the full envelope."""
+    envelope = {"body": "plain text", "status": 200, "paymentSucceeded": True}
     mock_run.return_value = MagicMock(
         returncode=0,
         stdout=json.dumps(envelope),
@@ -237,16 +274,30 @@ def test_x402_fetch_envelope_non_json_string_body(mock_run):
 
 
 @patch("subprocess.run")
-def test_x402_fetch_envelope_no_body_key(mock_run):
-    """Envelope with no 'body' key returns the full envelope."""
-    envelope = {"status": 200, "data": "foo"}
+def test_x402_fetch_v3_no_envelope(mock_run):
+    """v3.x returns raw API response (no envelope wrapping)."""
+    response = {"status": 200, "data": "foo"}
     mock_run.return_value = MagicMock(
         returncode=0,
-        stdout=json.dumps(envelope),
+        stdout=json.dumps(response),
         stderr="",
     )
     result = lobster.x402_fetch("https://example.com/api")
-    assert result == envelope
+    assert result == response
+
+
+@patch("subprocess.run")
+def test_x402_fetch_v3_preamble_stripped(mock_run):
+    """v3.x output with text preamble: preamble stripped, JSON returned."""
+    response = {"choices": [{"text": "hello"}]}
+    v3_output = f'x402 FETCH https://example.com\nStatus: 200\n\n{json.dumps(response)}\n'
+    mock_run.return_value = MagicMock(
+        returncode=0,
+        stdout=v3_output,
+        stderr="",
+    )
+    result = lobster.x402_fetch("https://example.com/api")
+    assert result == response
 
 
 # ---------------------------------------------------------------------------
@@ -278,10 +329,13 @@ def test_x402_fetch_invalid_json_stdout(mock_run):
 
 @patch("subprocess.run")
 def test_get_balance_json_decode_error(mock_run):
-    """get_balance with non-JSON stdout returns empty dict."""
+    """get_balance with non-parseable stdout returns empty dict.
+
+    v3.x regex finds no token lines → empty dict returned before v1.x fallback.
+    """
     mock_run.return_value = MagicMock(
         returncode=0,
-        stdout="not valid json",
+        stdout="not valid output",
         stderr="",
     )
     result = lobster.get_balance()

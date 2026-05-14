@@ -29,32 +29,32 @@ def test_get_proxy_url_preserves_path():
 
 def test_get_proxy_url_openrouter():
     result = corbits_urls.get_proxy_url("https://openrouter.ai")
-    assert result == "https://openrouter.abklabs.api.corbits.dev"
+    assert result == "https://openrouter.api.corbits.dev"
 
 
 def test_get_proxy_url_parallel():
     result = corbits_urls.get_proxy_url("https://api.parallel.ai")
-    assert result == "https://parallelai.abklabs.api.corbits.dev"
+    assert result == "https://parallel.api.corbits.dev"
 
 
 def test_get_proxy_url_scrapecreators():
     result = corbits_urls.get_proxy_url("https://api.scrapecreators.com")
-    assert result == "https://scrapecreators.abklabs.api.corbits.dev"
+    assert result == "https://scrapecreators.api.corbits.dev"
 
 
 def test_get_proxy_url_brave():
     result = corbits_urls.get_proxy_url("https://api.search.brave.com")
-    assert result == "https://brave.abklabs.api.corbits.dev"
+    assert result == "https://brave.api.corbits.dev"
 
 
 def test_get_proxy_url_openrouter_preserves_path():
     result = corbits_urls.get_proxy_url("https://openrouter.ai/api/v1/chat/completions")
-    assert result == "https://openrouter.abklabs.api.corbits.dev/api/v1/chat/completions"
+    assert result == "https://openrouter.api.corbits.dev/api/v1/chat/completions"
 
 
 def test_get_proxy_url_brave_preserves_path():
     result = corbits_urls.get_proxy_url("https://api.search.brave.com/res/v1/web/search")
-    assert result == "https://brave.abklabs.api.corbits.dev/res/v1/web/search"
+    assert result == "https://brave.api.corbits.dev/res/v1/web/search"
 
 
 def test_get_proxy_url_unknown():
@@ -73,22 +73,22 @@ def test_get_proxy_base_openai():
 
 def test_get_proxy_base_openrouter():
     result = corbits_urls.get_proxy_base("https://openrouter.ai")
-    assert result == "https://openrouter.abklabs.api.corbits.dev"
+    assert result == "https://openrouter.api.corbits.dev"
 
 
 def test_get_proxy_base_parallel():
     result = corbits_urls.get_proxy_base("https://api.parallel.ai")
-    assert result == "https://parallelai.abklabs.api.corbits.dev"
+    assert result == "https://parallel.api.corbits.dev"
 
 
 def test_get_proxy_base_scrapecreators():
     result = corbits_urls.get_proxy_base("https://api.scrapecreators.com")
-    assert result == "https://scrapecreators.abklabs.api.corbits.dev"
+    assert result == "https://scrapecreators.api.corbits.dev"
 
 
 def test_get_proxy_base_brave():
     result = corbits_urls.get_proxy_base("https://api.search.brave.com")
-    assert result == "https://brave.abklabs.api.corbits.dev"
+    assert result == "https://brave.api.corbits.dev"
 
 
 def test_get_proxy_base_unknown():
